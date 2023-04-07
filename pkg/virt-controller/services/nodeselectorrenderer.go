@@ -146,17 +146,18 @@ type hvFeatureLabel struct {
 	Label   string
 }
 
+// TODO Check when is HyperV related functionality invoked. Can we leverage that to do Vmm selection/customization?
 // makeHVFeatureLabelTable creates the mapping table between the VMI hyperv state and the label names.
 // The table needs pointers to v1.FeatureHyperv struct, so it has to be generated and can't be a
 // static var
 func makeHVFeatureLabelTable(vmiFeatures *v1.Features) []hvFeatureLabel {
 	// The following HyperV features don't require support from the host kernel, according to inspection
-	// of the QEMU sources (4.0 - adb3321bfd)
+	// of the QEMU sources (4.0 - adb3321bfd) // TODO QEMU
 	// VAPIC, Relaxed, Spinlocks, VendorID
 	// VPIndex, SyNIC: depend on both MSR and capability
 	// IPI, TLBFlush: depend on KVM Capabilities
 	// Runtime, Reset, SyNICTimer, Frequencies, Reenlightenment: depend on KVM MSRs availability
-	// EVMCS: depends on KVM capability, but the only way to know that is enable it, QEMU doesn't do
+	// EVMCS: depends on KVM capability, but the only way to know that is enable it, QEMU doesn't do // TODO QEMU
 	// any check before that, so we leave it out
 	//
 	// see also https://schd.ws/hosted_files/devconfcz2019/cf/vkuznets_enlightening_kvm_devconf2019.pdf
@@ -183,6 +184,7 @@ func makeHVFeatureLabelTable(vmiFeatures *v1.Features) []hvFeatureLabel {
 			Label:   "reset",
 		},
 		{
+			// TODO QEMU
 			// TODO: SyNIC depends on vp-index on QEMU level. We should enforce this constraint.
 			Feature: hyperv.SyNIC,
 			Label:   "synic",
