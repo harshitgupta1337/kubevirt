@@ -354,7 +354,7 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 			"echo", "bound PVCs"}
 	} else {
 		command = []string{"/usr/bin/virt-launcher-monitor",
-			"--qemu-timeout", generateVmmTimeoutWithJitter(t.launcherVmmTimeout), // TODO QEMU
+			"--vmm-timeout", generateVmmTimeoutWithJitter(t.launcherVmmTimeout),
 			"--name", domain,
 			"--uid", string(vmi.UID),
 			"--namespace", namespace,

@@ -326,7 +326,7 @@ func waitForFinalNotify(deleteNotificationSent chan watch.Event,
 }
 
 func main() {
-	qemuTimeout := pflag.Duration("qemu-timeout", defaultStartTimeout, "Amount of time to wait for qemu")
+	qemuTimeout := pflag.Duration("vmm-timeout", defaultStartTimeout, "Amount of time to wait for the vmm")
 	virtShareDir := pflag.String("kubevirt-share-dir", "/var/run/kubevirt", "Shared directory between virt-handler and virt-launcher")
 	ephemeralDiskDir := pflag.String("ephemeral-disk-dir", "/var/run/kubevirt-ephemeral-disks", "Base directory for ephemeral disk data")
 	containerDiskDir := pflag.String("container-disk-dir", "/var/run/kubevirt/container-disks", "Base directory for container disk data")
