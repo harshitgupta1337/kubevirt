@@ -94,13 +94,13 @@ func (_mr *_MockIsolationResultRecorder) Mounts(arg0 interface{}) *gomock.Call {
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "Mounts", arg0)
 }
 
-func (_m *MockIsolationResult) GetQEMUProcess() (go_ps.Process, error) {
-	ret := _m.ctrl.Call(_m, "GetQEMUProcess")
+func (_m *MockIsolationResult) GetVmmProcess() (go_ps.Process, error) {
+	ret := _m.ctrl.Call(_m, "GetVmmProcess")
 	ret0, _ := ret[0].(go_ps.Process)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-func (_mr *_MockIsolationResultRecorder) GetQEMUProcess() *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "GetQEMUProcess")
+func (_mr *_MockIsolationResultRecorder) GetVmmProcess() *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "GetVmmProcess")
 }

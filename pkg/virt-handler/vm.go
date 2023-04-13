@@ -256,7 +256,7 @@ func NewController(
 	if cgroups.IsCgroup2UnifiedMode() {
 		// Need 'rwm' permissions otherwise ebpf filtering program attached by runc
 		// will deny probing the device file with 'access' syscall. That in turn
-		// will lead to virtqemud failure on VM startup.
+		// will lead to virtqemud failure on VM startup.    // TODO QEMU
 		// This has been fixed upstream:
 		//   https://github.com/opencontainers/runc/pull/2796
 		// but the workaround is still needed to support previous versions without
@@ -544,7 +544,8 @@ func (d *VirtualMachineController) setupNetwork(vmi *v1.VirtualMachineInstance, 
 
 	return d.netConf.Setup(vmi, networks, isolationRes.Pid(), func() error {
 		if virtutil.WantVirtioNetDevice(vmi) {
-			if err := d.claimDeviceOwnership(rootMount, "vhost-net"); err != nil {
+			if err := d.claimDeviceOwnership(rootMount, "vhost-net"); err != nil { // TODO QEMU dependency
+				// TODO Why is this error not being thrown with our test VMs?
 				return neterrors.CreateCriticalNetworkError(fmt.Errorf("failed to set up vhost-net device, %s", err))
 			}
 		}
@@ -732,10 +733,10 @@ func (d *VirtualMachineController) migrationTargetUpdateVMIStatus(vmi *v1.Virtua
 		log.Log.Object(vmi).Info("The target node received the migrated domain")
 		vmiCopy.Status.MigrationState.TargetNodeDomainDetected = true
 
-		// adjust QEMU process memlock limits in order to enable old virt-launcher pod's to
+		// adjust VMM process memlock limits in order to enable old virt-launcher pod's to
 		// perform hotplug host-devices on post migration.
-		if err := isolation.AdjustQemuProcessMemoryLimits(d.podIsolationDetector, vmi, d.clusterConfig.GetConfig().AdditionalGuestMemoryOverheadRatio); err != nil {
-			d.recorder.Event(vmi, k8sv1.EventTypeWarning, err.Error(), "Failed to update target node qemu memory limits during live migration")
+		if err := isolation.AdjustVmmProcessMemoryLimits(d.podIsolationDetector, vmi, d.clusterConfig.GetConfig().AdditionalGuestMemoryOverheadRatio); err != nil {
+			d.recorder.Event(vmi, k8sv1.EventTypeWarning, err.Error(), "Failed to update target node VMM memory limits during live migration")
 		}
 
 	}
@@ -1002,7 +1003,7 @@ func (d *VirtualMachineController) updateGuestAgentConditions(vmi *v1.VirtualMac
 		for _, channel := range domain.Spec.Devices.Channels {
 			if channel.Target != nil {
 				log.Log.V(4).Infof("Channel: %s, %s", channel.Target.Name, channel.Target.State)
-				if channel.Target.Name == "org.qemu.guest_agent.0" {
+				if channel.Target.Name == "org.qemu.guest_agent.0" { // TODO QEMU
 					if channel.Target.State == "connected" {
 						channelConnected = true
 					}
@@ -1367,11 +1368,11 @@ func isGuestAgentSupported(vmi *v1.VirtualMachineInstance, commands []v1.GuestAg
 
 	if vmi != nil && vmi.Spec.AccessCredentials != nil {
 		for _, accessCredential := range vmi.Spec.AccessCredentials {
-			if accessCredential.SSHPublicKey != nil && accessCredential.SSHPublicKey.PropagationMethod.QemuGuestAgent != nil {
+			if accessCredential.SSHPublicKey != nil && accessCredential.SSHPublicKey.PropagationMethod.QemuGuestAgent != nil { // TODO QEMU
 				// defer checking the command list so we only do that once
 				checkSSH = true
 			}
-			if accessCredential.UserPassword != nil && accessCredential.UserPassword.PropagationMethod.QemuGuestAgent != nil {
+			if accessCredential.UserPassword != nil && accessCredential.UserPassword.PropagationMethod.QemuGuestAgent != nil { // TODO QEMU
 				// defer checking the command list so we only do that once
 				checkPasswd = true
 			}
@@ -1479,7 +1480,7 @@ func vmiContainsPCIHostDevice(vmi *v1.VirtualMachineInstance) bool {
 
 func (c *VirtualMachineController) Run(threadiness int, stopCh chan struct{}) {
 	defer c.Queue.ShutDown()
-	log.Log.Info("Starting virt-handler controller.")
+	log.Log.Info("Starting CloudHypervisor PoC virt-handler controller.")
 
 	go c.deviceManagerController.Run(stopCh)
 
@@ -2442,7 +2443,8 @@ func (d *VirtualMachineController) handleTargetMigrationProxy(vmi *v1.VirtualMac
 	}
 
 	// Get the libvirt connection socket file on the destination pod.
-	socketFile := fmt.Sprintf(filepath.Join(d.virtLauncherFSRunDirPattern, "libvirt/virtqemud-sock"), res.Pid())
+	socketFile := fmt.Sprintf(filepath.Join(d.virtLauncherFSRunDirPattern, "libvirt/virtqemud-sock"), res.Pid()) // TODO QEMU
+	// TODO QEMU We probably don't need this function for PoC because we don't support migration
 	// the migration-proxy is no longer shared via host mount, so we
 	// pass in the virt-launcher's baseDir to reach the unix sockets.
 	baseDir := fmt.Sprintf(filepath.Join(d.virtLauncherFSRunDirPattern, "kubevirt"), res.Pid())
@@ -2452,7 +2454,7 @@ func (d *VirtualMachineController) handleTargetMigrationProxy(vmi *v1.VirtualMac
 	migrationPortsRange := migrationproxy.GetMigrationPortsList(isBlockMigration)
 	for _, port := range migrationPortsRange {
 		key := migrationproxy.ConstructProxyKey(string(vmi.UID), port)
-		// a proxy between the target direct qemu channel and the connector in the destination pod
+		// a proxy between the target direct qemu channel and the connector in the destination pod // TODO QEMU
 		destSocketFile := migrationproxy.SourceUnixFile(baseDir, key)
 		migrationTargetSockets = append(migrationTargetSockets, destSocketFile)
 	}
@@ -2944,7 +2946,7 @@ func (d *VirtualMachineController) hotplugSriovInterfacesCommand(vmi *v1.Virtual
 		return fmt.Errorf("%s: %v", errMsgPrefix, err)
 	}
 
-	if err := isolation.AdjustQemuProcessMemoryLimits(d.podIsolationDetector, vmi, d.clusterConfig.GetConfig().AdditionalGuestMemoryOverheadRatio); err != nil {
+	if err := isolation.AdjustVmmProcessMemoryLimits(d.podIsolationDetector, vmi, d.clusterConfig.GetConfig().AdditionalGuestMemoryOverheadRatio); err != nil {
 		d.recorder.Event(vmi, k8sv1.EventTypeWarning, err.Error(), err.Error())
 		return fmt.Errorf("%s: %v", errMsgPrefix, err)
 	}

@@ -221,7 +221,7 @@ func (m *mounter) setAddMountTargetRecordHelper(vmi *v1.VirtualMachineInstance, 
 	return nil
 }
 
-// Mount takes a vmi and mounts all container disks of the VMI, so that they are visible for the qemu process.
+// Mount takes a vmi and mounts all container disks of the VMI, so that they are visible for the Vmm process.
 // Additionally qcow2 images are validated if "verify" is true. The validation happens with rlimits set, to avoid DOS.
 func (m *mounter) MountAndVerify(vmi *v1.VirtualMachineInstance) (map[string]*containerdisk.DiskInfo, error) {
 	record := vmiMountTargetRecord{}

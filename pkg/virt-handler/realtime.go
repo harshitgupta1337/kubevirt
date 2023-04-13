@@ -30,7 +30,6 @@ var (
 
 	// parse thread comm value expression
 	vcpuRegex = regexp.MustCompile(`^CPU (\d+)/KVM\n$`) // These threads follow this naming pattern as their command value (/proc/{pid}/task/{taskid}/comm)
-	// QEMU uses threads to represent vCPUs.
 
 )
 
@@ -41,11 +40,11 @@ func (d *VirtualMachineController) configureVCPUScheduler(vmi *v1.VirtualMachine
 	if err != nil {
 		return err
 	}
-	qemuProcess, err := res.GetQEMUProcess()
+	vmmProcess, err := res.GetVmmProcess()
 	if err != nil {
 		return err
 	}
-	vcpus, err := getVCPUThreadIDs(qemuProcess.Pid())
+	vcpus, err := getVCPUThreadIDs(vmmProcess.Pid())
 	if err != nil {
 		return err
 	}

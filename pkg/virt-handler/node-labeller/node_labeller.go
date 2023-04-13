@@ -392,7 +392,7 @@ func (n *NodeLabeller) shouldAddCPUModelLabel(
 	// particular CPU model differs from hypervisor's definition.
 	// E.g. currently Opteron_G2 requires svm by libvirt:
 	//     /usr/share/libvirt/cpu_map/x86_Opteron_G2.xml
-	// But libvirt marks it as Usable:yes even without svm because it is usable by qemu:
+	// But libvirt marks it as Usable:yes even without svm because it is usable by qemu: // TODO QEMU
 	//     /var/lib/kubevirt-node-labeller/virsh_domcapabilities.xml
 	// For more information refer to https://wiki.qemu.org/Features/CPUModels, "Getting
 	// information about CPU models" section.
