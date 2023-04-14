@@ -9,8 +9,8 @@ outdir=$1
 cmds=${@:2}
 
 if [ -z "$outdir" ] || [ -z "$cmds" ]; then
-  echo "Usage: $0 <build-output-directory> <cmd1> <cmd2> ..."
-  exit 1
+    echo "Usage: $0 <build-output-directory> <cmd1> <cmd2> ..."
+    exit 1
 fi
 
 export GOFLAGS+=" -buildmode=pie"
