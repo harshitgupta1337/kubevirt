@@ -107,14 +107,13 @@ func (s *socketBasedIsolationDetector) Allowlist(controller []string) PodIsolati
 	return s
 }
 
-// TODO QEMU: This function is not needed since we won't have virtqemud on the CH container
 func (s *socketBasedIsolationDetector) AdjustResources(vm *v1.VirtualMachineInstance, additionalOverheadRatio *string) error {
 	// only VFIO attached or with lock guest memory domains require MEMLOCK adjustment
 	if !util.IsVFIOVMI(vm) && !vm.IsRealtimeEnabled() && !util.IsSEVVMI(vm) {
 		return nil
 	}
 
-	// bump memlock ulimit for virtqemud
+	// bump memlock ulimit for the VMM daemon process (e.g., virtqemud or libvirtd)
 	res, err := s.Detect(vm)
 	if err != nil {
 		return err
@@ -132,8 +131,10 @@ func (s *socketBasedIsolationDetector) AdjustResources(vm *v1.VirtualMachineInst
 			continue
 		}
 
-		// virtqemud process sets the memory lock limit before fork/exec-ing into qemu
-		if process.Executable() != "virtqemud" {
+		// set the memory lock limit of the VMM daemon process
+		// before fork/exec-ing into the process (e.g., qemu-system-x86) for
+		// the given VMI
+		if process.Executable() != "virtqemud" || process.Executable() != "libvirtd" {
 			continue
 		}
 
@@ -186,7 +187,7 @@ func AdjustVmmProcessMemoryLimits(podIsoDetector PodIsolationDetector, vmi *v1.V
 	return nil
 }
 
-var vmmProcessExecutables = []string{"qemu-system", "qemu-kvm", "cloud-hypervisor"} // TODO QEMU Check if cloud-hypervisor is the correct executable
+var vmmProcessExecutables = []string{"qemu-system", "qemu-kvm", "cloud-hypervisor", "cloud-hypervisor-static"}
 
 // findIsolatedVmmProcess Returns the first occurrence of the VMM process whose parent is PID"
 func findIsolatedVmmProcess(processes []ps.Process, pid int) (ps.Process, error) {

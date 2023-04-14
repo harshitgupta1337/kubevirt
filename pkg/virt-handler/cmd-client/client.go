@@ -589,8 +589,8 @@ func (c *VirtLauncherClient) GetVmmVersion() (string, error) {
 		return versionResponse.Version, nil
 	}
 
-	log.Log.Reason(err).Error("error getting the qemu version")
-	return "", errors.New("error getting the qemu version")
+	log.Log.Reason(err).Error("error getting the VMM version")
+	return "", errors.New("error getting the VMM version")
 }
 
 func (c *VirtLauncherClient) GetDomainStats() (*stats.DomainStats, bool, error) {
