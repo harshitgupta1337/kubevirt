@@ -421,7 +421,7 @@ func (l *Launcher) GetVmmVersion(_ context.Context, _ *cmdv1.EmptyRequest) (*cmd
 		Response: &cmdv1.Response{},
 	}
 
-	if version, err := l.domainManager.GetQemuVersion(); err != nil { // TODO QEMU
+	if version, err := l.domainManager.GetVmmVersion(); err != nil { // TODO QEMU
 		response.Response.Message = getErrorMessage(err)
 	} else {
 		response.Response.Success = true

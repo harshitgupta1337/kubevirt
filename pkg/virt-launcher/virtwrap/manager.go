@@ -127,7 +127,7 @@ type DomainManager interface {
 	Exec(string, string, []string, int32) (string, error)
 	GuestPing(string) error
 	MemoryDump(vmi *v1.VirtualMachineInstance, dumpPath string) error
-	GetQemuVersion() (string, error)
+	GetVmmVersion() (string, error)
 }
 
 type LibvirtDomainManager struct {
@@ -297,7 +297,7 @@ func (l *LibvirtDomainManager) setGuestTime(vmi *v1.VirtualMachineInstance) erro
 
 					switch libvirtError.Code {
 					case libvirt.ERR_AGENT_UNRESPONSIVE:
-						const unresponsive = "failed to set time: QEMU agent unresponsive"
+						const unresponsive = "failed to set time: QEMU agent unresponsive" // TODO QEMU What to do with agent?
 						latestErr = fmt.Errorf("%s, %s", unresponsive, err)
 						log.Log.Object(vmi).Reason(err).V(9).Warning(unresponsive)
 					case libvirt.ERR_OPERATION_UNSUPPORTED:
@@ -1642,8 +1642,8 @@ func (l *LibvirtDomainManager) setDomainSpecWithHooks(vmi *v1.VirtualMachineInst
 	return util.SetDomainSpecStrWithHooks(l.virConn, vmi, origSpec)
 }
 
-func (l *LibvirtDomainManager) GetQemuVersion() (string, error) {
-	return l.virConn.GetQemuVersion()
+func (l *LibvirtDomainManager) GetVmmVersion() (string, error) {
+	return l.virConn.GetVmmVersion()
 }
 
 func (l *LibvirtDomainManager) GetDomainStats() ([]*stats.DomainStats, error) {

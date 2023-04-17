@@ -63,7 +63,7 @@ type Connection interface {
 	// 1. avoid to expose to the client code the libvirt-specific return type, see docs in stats/ subpackage
 	// 2. transparently handling the addition of the memory stats, currently (libvirt 4.9) not handled by the bulk stats API
 	GetDomainStats(statsTypes libvirt.DomainStatsTypes, l *stats.DomainJobInfo, flags libvirt.ConnectGetAllDomainStatsFlags) ([]*stats.DomainStats, error)
-	GetQemuVersion() (string, error)
+	GetVmmVersion() (string, error)
 }
 
 type Stream interface {
@@ -75,6 +75,7 @@ type VirStream struct {
 	*libvirt.Stream
 }
 
+// TODO Add an extra arg indicating which VMM to use
 type LibvirtConnection struct {
 	Connect       *libvirt.Connect
 	user          string
@@ -266,7 +267,7 @@ func (l *LibvirtConnection) GetAllDomainStats(statsTypes libvirt.DomainStatsType
 	return domStats, nil
 }
 
-func (l *LibvirtConnection) GetQemuVersion() (string, error) {
+func (l *LibvirtConnection) GetVmmVersion() (string, error) {
 	version, err := l.Connect.GetVersion()
 	if err != nil {
 		return "", err
@@ -285,7 +286,7 @@ func (l *LibvirtConnection) GetQemuVersion() (string, error) {
 	version = version - (minor * 1000)
 	release := version
 
-	return fmt.Sprintf("QEMU %d.%d.%d", major, minor, release), err
+	return fmt.Sprintf("QEMU %d.%d.%d", major, minor, release), err // TODO Generalize this to include cloud-hypervisor as well
 }
 
 func (l *LibvirtConnection) GetDomainStats(statsTypes libvirt.DomainStatsTypes, migrateJobInfo *stats.DomainJobInfo, flags libvirt.ConnectGetAllDomainStatsFlags) ([]*stats.DomainStats, error) {
@@ -514,6 +515,7 @@ func NewConnection(uri string, user string, pass string, checkInterval time.Dura
 	return NewConnectionWithTimeout(uri, user, pass, checkInterval, ConnectionInterval, ConnectionTimeout)
 }
 
+// TODO QEMU Add an extra parameter here to indicate which VMM to use
 func NewConnectionWithTimeout(uri string, user string, pass string, checkInterval, connectionInterval, connectionTimeout time.Duration) (Connection, error) {
 	logger := log.Log
 	logger.V(1).Infof("Connecting to libvirt daemon: %s", uri)
@@ -534,6 +536,7 @@ func NewConnectionWithTimeout(uri string, user string, pass string, checkInterva
 	}
 	logger.V(1).Info("Connected to libvirt daemon")
 
+	// TODO QEMU Pass the VMM parameter to this constructor
 	lvConn := &LibvirtConnection{
 		Connect: virConn, user: user, pass: pass, uri: uri, alive: true,
 		reconnectLock: &sync.Mutex{},

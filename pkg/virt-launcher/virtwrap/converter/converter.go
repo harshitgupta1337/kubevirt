@@ -77,7 +77,7 @@ const (
 
 const (
 	multiQueueMaxQueues  = uint32(256)
-	QEMUSeaBiosDebugPipe = "/var/run/kubevirt-private/QEMUSeaBiosDebugPipe"
+	QEMUSeaBiosDebugPipe = "/var/run/kubevirt-private/QEMUSeaBiosDebugPipe" // TODO QEMU
 )
 
 const (
