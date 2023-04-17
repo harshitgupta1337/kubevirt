@@ -795,6 +795,7 @@ func (l *LibvirtDomainManager) generateConverterContext(vmi *v1.VirtualMachineIn
 		PermanentVolumes:      permanentVolumes,
 		EphemeraldiskCreator:  l.ephemeralDiskCreator,
 		UseLaunchSecurity:     kutil.IsSEVVMI(vmi),
+		Vmm:                   "qemu", // TODO derive this value from the VMI spec
 	}
 
 	if options != nil {

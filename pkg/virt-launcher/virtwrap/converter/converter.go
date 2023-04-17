@@ -114,6 +114,7 @@ type ConverterContext struct {
 	MemBalloonStatsPeriod uint
 	UseVirtioTransitional bool
 	EphemeraldiskCreator  ephemeraldisk.EphemeralDiskCreatorInterface
+	Vmm                   string
 	VolumesDiscardIgnore  []string
 	Topology              *cmdv1.Topology
 	ExpandDisksEnabled    bool
@@ -143,98 +144,136 @@ func isARM64(arch string) bool {
 	return false
 }
 
+// v1 refers to the API spec of KubeVirt
+// api refers to the API spec of Libvirt
+// The purpose of the function is to convert the KubeVirt spec to Libvirt spec
 func Convert_v1_Disk_To_api_Disk(c *ConverterContext, diskDevice *v1.Disk, disk *api.Disk, prefixMap map[string]deviceNamer, numQueues *uint, volumeStatusMap map[string]v1.VolumeStatus) error {
-	if diskDevice.Disk != nil {
-		var unit int
-		disk.Device = "disk"
-		disk.Target.Bus = diskDevice.Disk.Bus
-		if diskDevice.Disk.Bus == "scsi" {
-			// Ensure we assign this disk to the correct scsi controller
-			if disk.Address == nil {
-				disk.Address = &api.Address{}
-			}
-			disk.Address.Type = "drive"
-			// This should be the index of the virtio-scsi controller, which is hard coded to 0
-			disk.Address.Controller = "0"
-			disk.Address.Bus = "0"
-		}
-		disk.Target.Device, unit = makeDeviceName(diskDevice.Name, diskDevice.Disk.Bus, prefixMap)
-		if diskDevice.Disk.Bus == "scsi" {
-			disk.Address.Unit = strconv.Itoa(unit)
-		}
-		if diskDevice.Disk.PciAddress != "" {
-			if diskDevice.Disk.Bus != v1.DiskBusVirtio {
-				return fmt.Errorf("setting a pci address is not allowed for non-virtio bus types, for disk %s", diskDevice.Name)
-			}
-			addr, err := device.NewPciAddressField(diskDevice.Disk.PciAddress)
-			if err != nil {
-				return fmt.Errorf("failed to configure disk %s: %v", diskDevice.Name, err)
-			}
-			disk.Address = addr
-		}
-		if diskDevice.Disk.Bus == v1.DiskBusVirtio {
-			disk.Model = translateModel(c, v1.VirtIO)
-		}
-		disk.ReadOnly = toApiReadOnly(diskDevice.Disk.ReadOnly)
-		disk.Serial = diskDevice.Serial
-		if diskDevice.Shareable != nil {
-			if *diskDevice.Shareable {
-				if diskDevice.Cache == "" {
-					diskDevice.Cache = v1.CacheNone
-				}
-				if diskDevice.Cache != v1.CacheNone {
-					return fmt.Errorf("a sharable disk requires cache = none got: %v", diskDevice.Cache)
-				}
-				disk.Shareable = &api.Shareable{}
-			}
-		}
-	} else if diskDevice.LUN != nil {
-		disk.Device = "lun"
-		disk.Target.Bus = diskDevice.LUN.Bus
-		disk.Target.Device, _ = makeDeviceName(diskDevice.Name, diskDevice.LUN.Bus, prefixMap)
-		disk.ReadOnly = toApiReadOnly(diskDevice.LUN.ReadOnly)
-		if diskDevice.LUN.Reservation {
-			setReservation(disk)
-		}
-	} else if diskDevice.CDRom != nil {
-		disk.Device = "cdrom"
-		disk.Target.Tray = string(diskDevice.CDRom.Tray)
-		disk.Target.Bus = diskDevice.CDRom.Bus
-		disk.Target.Device, _ = makeDeviceName(diskDevice.Name, diskDevice.CDRom.Bus, prefixMap)
-		if diskDevice.CDRom.ReadOnly != nil {
-			disk.ReadOnly = toApiReadOnly(*diskDevice.CDRom.ReadOnly)
+	if c.Vmm == "ch" {
+		if diskDevice.Disk == nil {
+			// Throw error
+			return fmt.Errorf("DiskDevice %s in a CloudHypervisor VM should be of type disk.", diskDevice.Name)
 		} else {
-			disk.ReadOnly = toApiReadOnly(true)
-		}
-	}
-	disk.Driver = &api.DiskDriver{
-		Name:        "qemu",
-		Cache:       string(diskDevice.Cache),
-		IO:          diskDevice.IO,
-		ErrorPolicy: "stop",
-	}
-	if diskDevice.Disk != nil || diskDevice.LUN != nil {
-		if !contains(c.VolumesDiscardIgnore, diskDevice.Name) {
-			disk.Driver.Discard = "unmap"
-		}
-		volumeStatus, ok := volumeStatusMap[diskDevice.Name]
-		if ok && volumeStatus.PersistentVolumeClaimInfo != nil {
-			disk.FilesystemOverhead = volumeStatus.PersistentVolumeClaimInfo.FilesystemOverhead
-			disk.Capacity = getDiskCapacity(volumeStatus.PersistentVolumeClaimInfo)
-		}
-		disk.ExpandDisksEnabled = c.ExpandDisksEnabled
-	}
-	if numQueues != nil && disk.Target.Bus == v1.DiskBusVirtio {
-		disk.Driver.Queues = numQueues
-	}
-	disk.Alias = api.NewUserDefinedAlias(diskDevice.Name)
-	if diskDevice.BootOrder != nil {
-		disk.BootOrder = &api.BootOrder{Order: *diskDevice.BootOrder}
-	}
-	if c.UseLaunchSecurity && disk.Target.Bus == v1.DiskBusVirtio {
-		disk.Driver.IOMMU = "on"
-	}
+			// Convert the diskdevice into disk
+			if diskDevice.Disk.Bus == v1.DiskBusVirtio {
+				disk.Model = translateModel(c, v1.VirtIO)
+			}
 
+			// Populate the disk target
+			disk.Target.Device, _ = makeDeviceName(diskDevice.Name, diskDevice.Disk.Bus, prefixMap)
+
+			if diskDevice.Disk != nil {
+				if !contains(c.VolumesDiscardIgnore, diskDevice.Name) {
+					disk.Driver.Discard = "unmap"
+				}
+				volumeStatus, ok := volumeStatusMap[diskDevice.Name]
+				if ok && volumeStatus.PersistentVolumeClaimInfo != nil {
+					disk.FilesystemOverhead = volumeStatus.PersistentVolumeClaimInfo.FilesystemOverhead
+					disk.Capacity = getDiskCapacity(volumeStatus.PersistentVolumeClaimInfo)
+				}
+				disk.ExpandDisksEnabled = c.ExpandDisksEnabled
+			}
+			if numQueues != nil && disk.Target.Bus == v1.DiskBusVirtio {
+				disk.Driver.Queues = numQueues
+			}
+			// TODO Set disk.Driver.name or disk.Driver.if??
+			disk.Alias = api.NewUserDefinedAlias(diskDevice.Name)
+		}
+	} else if c.Vmm == "qemu" {
+		// a DiskDevice can be attached to a VMI either as a Disk, LUN or CDRom
+		if diskDevice.Disk != nil {
+			// If the DiskDevice is to be attached to VMI as a Disk
+			var unit int
+			disk.Device = "disk"
+			disk.Target.Bus = diskDevice.Disk.Bus
+			if diskDevice.Disk.Bus == "scsi" {
+				// Ensure we assign this disk to the correct scsi controller
+				if disk.Address == nil {
+					disk.Address = &api.Address{}
+				}
+				disk.Address.Type = "drive"
+				// This should be the index of the virtio-scsi controller, which is hard coded to 0
+				disk.Address.Controller = "0"
+				disk.Address.Bus = "0"
+			}
+			disk.Target.Device, unit = makeDeviceName(diskDevice.Name, diskDevice.Disk.Bus, prefixMap)
+			if diskDevice.Disk.Bus == "scsi" {
+				disk.Address.Unit = strconv.Itoa(unit)
+			}
+			if diskDevice.Disk.PciAddress != "" {
+				if diskDevice.Disk.Bus != v1.DiskBusVirtio {
+					return fmt.Errorf("setting a pci address is not allowed for non-virtio bus types, for disk %s", diskDevice.Name)
+				}
+				addr, err := device.NewPciAddressField(diskDevice.Disk.PciAddress)
+				if err != nil {
+					return fmt.Errorf("failed to configure disk %s: %v", diskDevice.Name, err)
+				}
+				disk.Address = addr
+			}
+			if diskDevice.Disk.Bus == v1.DiskBusVirtio {
+				disk.Model = translateModel(c, v1.VirtIO)
+			}
+			disk.ReadOnly = toApiReadOnly(diskDevice.Disk.ReadOnly)
+			disk.Serial = diskDevice.Serial
+			if diskDevice.Shareable != nil {
+				if *diskDevice.Shareable {
+					if diskDevice.Cache == "" {
+						diskDevice.Cache = v1.CacheNone
+					}
+					if diskDevice.Cache != v1.CacheNone {
+						return fmt.Errorf("a sharable disk requires cache = none got: %v", diskDevice.Cache)
+					}
+					disk.Shareable = &api.Shareable{}
+				}
+			}
+		} else if diskDevice.LUN != nil {
+			disk.Device = "lun"
+			disk.Target.Bus = diskDevice.LUN.Bus
+			disk.Target.Device, _ = makeDeviceName(diskDevice.Name, diskDevice.LUN.Bus, prefixMap)
+			disk.ReadOnly = toApiReadOnly(diskDevice.LUN.ReadOnly)
+			if diskDevice.LUN.Reservation {
+				setReservation(disk)
+			}
+		} else if diskDevice.CDRom != nil {
+			disk.Device = "cdrom"
+			disk.Target.Tray = string(diskDevice.CDRom.Tray)
+			disk.Target.Bus = diskDevice.CDRom.Bus
+			disk.Target.Device, _ = makeDeviceName(diskDevice.Name, diskDevice.CDRom.Bus, prefixMap)
+			if diskDevice.CDRom.ReadOnly != nil {
+				disk.ReadOnly = toApiReadOnly(*diskDevice.CDRom.ReadOnly)
+			} else {
+				disk.ReadOnly = toApiReadOnly(true)
+			}
+		}
+		disk.Driver = &api.DiskDriver{
+			Name:        "qemu",
+			Cache:       string(diskDevice.Cache),
+			IO:          diskDevice.IO,
+			ErrorPolicy: "stop",
+		}
+		if diskDevice.Disk != nil || diskDevice.LUN != nil {
+			if !contains(c.VolumesDiscardIgnore, diskDevice.Name) {
+				disk.Driver.Discard = "unmap"
+			}
+			volumeStatus, ok := volumeStatusMap[diskDevice.Name]
+			if ok && volumeStatus.PersistentVolumeClaimInfo != nil {
+				disk.FilesystemOverhead = volumeStatus.PersistentVolumeClaimInfo.FilesystemOverhead
+				disk.Capacity = getDiskCapacity(volumeStatus.PersistentVolumeClaimInfo)
+			}
+			disk.ExpandDisksEnabled = c.ExpandDisksEnabled
+		}
+		if numQueues != nil && disk.Target.Bus == v1.DiskBusVirtio {
+			disk.Driver.Queues = numQueues
+		}
+		disk.Alias = api.NewUserDefinedAlias(diskDevice.Name)
+		if diskDevice.BootOrder != nil {
+			disk.BootOrder = &api.BootOrder{Order: *diskDevice.BootOrder}
+		}
+		if c.UseLaunchSecurity && disk.Target.Bus == v1.DiskBusVirtio {
+			disk.Driver.IOMMU = "on"
+		}
+	} else {
+		return fmt.Errorf("The provided VMM in ConverterCtx was %s. Should be either qemu or ch", c.Vmm)
+	}
 	return nil
 }
 
@@ -1279,6 +1318,7 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 
 			log.Log.Object(vmi).Infof("kernel boot defined for VMI. Converting to domain XML")
 			if kb.Container.KernelPath != "" {
+				// TODO Hermes. This should probably be taken care of automatically by KubeVirt when we specify a Kernel boot
 				kernelPath := containerdisk.GetKernelBootArtifactPathFromLauncherView(kb.Container.KernelPath)
 				log.Log.Object(vmi).Infof("setting kernel path for kernel boot: " + kernelPath)
 				domain.Spec.OS.Kernel = kernelPath
@@ -1496,6 +1536,7 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 	for _, disk := range vmi.Spec.Domain.Devices.Disks {
 		newDisk := api.Disk{}
 
+		// TODO Hermes. This function has to be updated for Hermes. Partially updated already.
 		err := Convert_v1_Disk_To_api_Disk(c, &disk, &newDisk, prefixMap, numBlkQueues, volumeStatusMap)
 		if err != nil {
 			return err
@@ -1506,6 +1547,7 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 		}
 
 		if _, ok := c.HotplugVolumes[disk.Name]; !ok {
+			// TODO Hermes. This function has to be updated for Hermes.
 			err = Convert_v1_Volume_To_api_Disk(volume, &newDisk, c, volumeIndices[disk.Name])
 		} else {
 			err = Convert_v1_Hotplug_Volume_To_api_Disk(volume, &newDisk, c)
@@ -1519,6 +1561,7 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 		}
 
 		if useIOThreads {
+			// TODO Hermes. Throw an error whenever an unexpected code-region is entered when using CloudHypervisor VMM.
 			if _, ok := c.HotplugVolumes[disk.Name]; !ok {
 				ioThreadId := defaultIOThread
 				dedicatedThread := false
