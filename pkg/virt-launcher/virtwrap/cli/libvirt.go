@@ -286,7 +286,7 @@ func (l *LibvirtConnection) GetVmmVersion() (string, error) {
 	version = version - (minor * 1000)
 	release := version
 
-	return fmt.Sprintf("QEMU %d.%d.%d", major, minor, release), err // TODO Generalize this to include cloud-hypervisor as well
+	return fmt.Sprintf("QEMU %d.%d.%d", major, minor, release), err // TODO QEMU Hermes: Generalize this to include cloud-hypervisor as well
 }
 
 func (l *LibvirtConnection) GetDomainStats(statsTypes libvirt.DomainStatsTypes, migrateJobInfo *stats.DomainJobInfo, flags libvirt.ConnectGetAllDomainStatsFlags) ([]*stats.DomainStats, error) {

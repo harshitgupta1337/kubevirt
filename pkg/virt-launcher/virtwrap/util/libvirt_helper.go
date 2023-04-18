@@ -209,6 +209,9 @@ func GetDomainSpecWithFlags(dom cli.VirDomain, flags libvirt.DomainXMLFlags) (*a
 	return domain, nil
 }
 
+// TODO Hermes
+// Need a function for starting libvirtd from the /libvirt/bin/src folder
+
 func (l LibvirtWrapper) StartVirtquemud(stopChan chan struct{}) {
 	// we spawn libvirt from virt-launcher in order to ensure the virtqemud+qemu process
 	// doesn't exit until virt-launcher is ready for it to. Virt-launcher traps signals
@@ -273,6 +276,7 @@ func (l LibvirtWrapper) StartVirtquemud(stopChan chan struct{}) {
 
 func startVirtlogdLogging(stopChan chan struct{}, domainName string, nonRoot bool) {
 	for {
+		// TODO Hermes update the path of the executable and the logfile
 		cmd := exec.Command("/usr/sbin/virtlogd", "-f", "/etc/libvirt/virtlogd.conf")
 
 		exitChan := make(chan struct{})
@@ -473,6 +477,7 @@ func copyFile(from, to string) error {
 }
 
 func (l LibvirtWrapper) SetupLibvirt(customLogFilters *string) (err error) {
+	// TODO Hermes this function needs change
 	runtimeQemuConfPath := qemuConfPath
 	if !l.root() {
 		runtimeQemuConfPath = qemuNonRootConfPath

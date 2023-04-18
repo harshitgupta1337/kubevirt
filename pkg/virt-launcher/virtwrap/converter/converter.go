@@ -154,11 +154,9 @@ func Convert_v1_Disk_To_api_Disk(c *ConverterContext, diskDevice *v1.Disk, disk 
 			return fmt.Errorf("DiskDevice %s in a CloudHypervisor VM should be of type disk.", diskDevice.Name)
 		} else {
 			// Convert the diskdevice into disk
-			if diskDevice.Disk.Bus == v1.DiskBusVirtio {
-				disk.Model = translateModel(c, v1.VirtIO)
-			}
-
+			disk.Device = "disk"
 			// Populate the disk target
+			disk.Target.Bus = diskDevice.Disk.Bus
 			disk.Target.Device, _ = makeDeviceName(diskDevice.Name, diskDevice.Disk.Bus, prefixMap)
 
 			if diskDevice.Disk != nil {
@@ -175,7 +173,6 @@ func Convert_v1_Disk_To_api_Disk(c *ConverterContext, diskDevice *v1.Disk, disk 
 			if numQueues != nil && disk.Target.Bus == v1.DiskBusVirtio {
 				disk.Driver.Queues = numQueues
 			}
-			// TODO Set disk.Driver.name or disk.Driver.if??
 			disk.Alias = api.NewUserDefinedAlias(diskDevice.Name)
 		}
 	} else if c.Vmm == "qemu" {
@@ -1547,7 +1544,7 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 		}
 
 		if _, ok := c.HotplugVolumes[disk.Name]; !ok {
-			// TODO Hermes. This function has to be updated for Hermes.
+			// TODO Hermes. This function is going to be used for Hermes.
 			err = Convert_v1_Volume_To_api_Disk(volume, &newDisk, c, volumeIndices[disk.Name])
 		} else {
 			err = Convert_v1_Hotplug_Volume_To_api_Disk(volume, &newDisk, c)

@@ -632,7 +632,7 @@ func (l *LibvirtDomainManager) preStartHook(vmi *v1.VirtualMachineInstance, doma
 		converter.SetOptimalIOMode(&domain.Spec.Devices.Disks[i])
 	}
 
-	if err := l.credManager.HandleQemuAgentAccessCredentials(vmi); err != nil {
+	if err := l.credManager.HandleQemuAgentAccessCredentials(vmi); err != nil { // TODO QEMU
 		return domain, fmt.Errorf("Starting qemu agent access credential propagation failed: %v", err)
 	}
 
@@ -795,7 +795,7 @@ func (l *LibvirtDomainManager) generateConverterContext(vmi *v1.VirtualMachineIn
 		PermanentVolumes:      permanentVolumes,
 		EphemeraldiskCreator:  l.ephemeralDiskCreator,
 		UseLaunchSecurity:     kutil.IsSEVVMI(vmi),
-		Vmm:                   "qemu", // TODO derive this value from the VMI spec
+		Vmm:                   "qemu", // TODO Hermes derive this value from the VMI spec
 	}
 
 	if options != nil {

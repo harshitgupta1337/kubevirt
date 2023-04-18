@@ -110,17 +110,22 @@ func startCmdServer(socketPath string,
 	return done
 }
 
-func createLibvirtConnection(runWithNonRoot bool) virtcli.Connection {
-	libvirtUri := "qemu:///system"
+func createLibvirtConnection(runWithNonRoot bool, vmm string) virtcli.Connection {
+	libvirtUri := ""
 	user := ""
-	if runWithNonRoot {
-		user = putil.NonRootUserString
-		libvirtUri = "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"
+	if vmm == "qemu" {
+		libvirtUri = "qemu:///system" // TODO Hermes QEMU
+		if runWithNonRoot {
+			user = putil.NonRootUserString
+			libvirtUri = "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"
+		}
+	} else if vmm == "ch" {
+		libvirtUri = "ch:///system"
 	}
 
 	domainConn, err := virtcli.NewConnection(libvirtUri, user, "", 10*time.Second)
 	if err != nil {
-		panic(fmt.Sprintf("failed to connect to virtqemud: %v", err))
+		panic(fmt.Sprintf("failed to connect to libvirtUri %s: %v", libvirtUri, err))
 	}
 
 	return domainConn
@@ -326,6 +331,7 @@ func waitForFinalNotify(deleteNotificationSent chan watch.Event,
 }
 
 func main() {
+	vmm := pflag.String("vmm", "qemu", "VMM to use for this VMI. Default: qemu")
 	qemuTimeout := pflag.Duration("vmm-timeout", defaultStartTimeout, "Amount of time to wait for the vmm")
 	virtShareDir := pflag.String("kubevirt-share-dir", "/var/run/kubevirt", "Shared directory between virt-handler and virt-launcher")
 	ephemeralDiskDir := pflag.String("ephemeral-disk-dir", "/var/run/kubevirt-ephemeral-disks", "Base directory for ephemeral disk data")
@@ -400,7 +406,7 @@ func main() {
 
 	util.StartVirtlog(stopChan, domainName, *runWithNonRoot)
 
-	domainConn := createLibvirtConnection(*runWithNonRoot)
+	domainConn := createLibvirtConnection(*runWithNonRoot, *vmm)
 	defer domainConn.Close()
 
 	var agentStore = agentpoller.NewAsyncAgentStore()
