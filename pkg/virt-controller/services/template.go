@@ -353,7 +353,10 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 			"-c",
 			"echo", "bound PVCs"}
 	} else {
+		logger := log.DefaultLogger()
+		logger.Infof("nonRoot = %v", nonRoot)
 		command = []string{"/usr/bin/virt-launcher-monitor",
+			"--vmm", "ch",
 			"--vmm-timeout", generateVmmTimeoutWithJitter(t.launcherVmmTimeout),
 			"--name", domain,
 			"--uid", string(vmi.UID),
@@ -656,7 +659,7 @@ func (t *templateService) newContainerSpecRenderer(vmi *v1.VirtualMachineInstanc
 		computeContainerOpts = append(computeContainerOpts, WithNonRoot(userId))
 		computeContainerOpts = append(computeContainerOpts, WithDropALLCapabilities())
 	}
-	if t.IsPPC64() {
+	if t.IsPPC64() || true { // TODO Hermes. Setting virt-launcher container to privileged to run VMs.
 		computeContainerOpts = append(computeContainerOpts, WithPrivileged())
 	}
 	if vmi.Spec.ReadinessProbe != nil {

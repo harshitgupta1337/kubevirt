@@ -515,7 +515,7 @@ func NewConnection(uri string, user string, pass string, checkInterval time.Dura
 	return NewConnectionWithTimeout(uri, user, pass, checkInterval, ConnectionInterval, ConnectionTimeout)
 }
 
-// TODO QEMU Add an extra parameter here to indicate which VMM to use
+// TODO QEMU Hermes Add an extra parameter here to indicate which VMM to use
 func NewConnectionWithTimeout(uri string, user string, pass string, checkInterval, connectionInterval, connectionTimeout time.Duration) (Connection, error) {
 	logger := log.Log
 	logger.V(1).Infof("Connecting to libvirt daemon: %s", uri)

@@ -159,6 +159,10 @@ func Convert_v1_Disk_To_api_Disk(c *ConverterContext, diskDevice *v1.Disk, disk 
 			disk.Target.Bus = diskDevice.Disk.Bus
 			disk.Target.Device, _ = makeDeviceName(diskDevice.Name, diskDevice.Disk.Bus, prefixMap)
 
+			disk.Driver = &api.DiskDriver{
+				Type: "raw",
+			}
+
 			if diskDevice.Disk != nil {
 				if !contains(c.VolumesDiscardIgnore, diskDevice.Name) {
 					disk.Driver.Discard = "unmap"
@@ -1610,8 +1614,9 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 		domain.Spec.Devices.Rng = newRng
 	}
 
-	domain.Spec.Devices.Ballooning = &api.MemBalloon{}
-	ConvertV1ToAPIBalloning(&vmi.Spec.Domain.Devices, domain.Spec.Devices.Ballooning, c)
+	// TODO Hermes. Remove this because even model=None doesn't work with CloudHypervisor
+	//domain.Spec.Devices.Ballooning = &api.MemBalloon{}
+	//ConvertV1ToAPIBalloning(&vmi.Spec.Domain.Devices, domain.Spec.Devices.Ballooning, c)
 
 	if vmi.Spec.Domain.Devices.Inputs != nil {
 		inputDevices := make([]api.Input, 0)

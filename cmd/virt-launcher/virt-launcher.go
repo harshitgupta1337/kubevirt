@@ -114,7 +114,7 @@ func createLibvirtConnection(runWithNonRoot bool, vmm string) virtcli.Connection
 	libvirtUri := ""
 	user := ""
 	if vmm == "qemu" {
-		libvirtUri = "qemu:///system" // TODO Hermes QEMU
+		libvirtUri = "qemu:///system"
 		if runWithNonRoot {
 			user = putil.NonRootUserString
 			libvirtUri = "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"
@@ -394,17 +394,17 @@ func main() {
 	// Start virtqemud, virtlogd, and establish libvirt connection
 	stopChan := make(chan struct{})
 
-	l := util.NewLibvirtWrapper(*runWithNonRoot)
+	l := util.NewLibvirtWrapper(*runWithNonRoot, *vmm)
 	err = l.SetupLibvirt(libvirtLogFilters)
 	if err != nil {
 		panic(err)
 	}
 
-	l.StartVirtquemud(stopChan)
+	l.StartVmmDaemon(stopChan)
 	// only single domain should be present
 	domainName := api.VMINamespaceKeyFunc(vmi)
 
-	util.StartVirtlog(stopChan, domainName, *runWithNonRoot)
+	util.StartVirtlog(stopChan, domainName, *runWithNonRoot, *vmm)
 
 	domainConn := createLibvirtConnection(*runWithNonRoot, *vmm)
 	defer domainConn.Close()
@@ -446,8 +446,10 @@ func main() {
 	}
 
 	events := make(chan watch.Event, 2)
-	// Send domain notifications to virt-handler
-	startDomainEventMonitoring(notifier, *virtShareDir, domainConn, events, vmi, domainName, &agentStore, *qemuAgentSysInterval, *qemuAgentFileInterval, *qemuAgentUserInterval, *qemuAgentVersionInterval, *qemuAgentFSFreezeStatusInterval, metadataCache)
+	// TODO Hermes. Commenting domain event monitoring because agent doesn't exist rn
+	// // Send domain notifications to virt-handler
+	// startDomainEventMonitoring(notifier, *virtShareDir, domainConn, events, vmi, domainName, &agentStore, *qemuAgentSysInterval, *qemuAgentFileInterval, *qemuAgentUserInterval, *qemuAgentVersionInterval, *qemuAgentFSFreezeStatusInterval, metadataCache)
+	fmt.Println(*qemuAgentSysInterval, *qemuAgentFileInterval, *qemuAgentUserInterval, *qemuAgentVersionInterval, *qemuAgentFSFreezeStatusInterval)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt,
@@ -472,10 +474,14 @@ func main() {
 	domain := waitForDomainUUID(*qemuTimeout, events, signalStopChan, domainManager)
 	if domain != nil {
 		var pidDir string
-		if *runWithNonRoot {
-			pidDir = "/run/libvirt/qemu/run"
-		} else {
-			pidDir = "/run/libvirt/qemu"
+		if *vmm == "qemu" {
+			if *runWithNonRoot {
+				pidDir = "/run/libvirt/qemu/run"
+			} else {
+				pidDir = "/run/libvirt/qemu"
+			}
+		} else if *vmm == "ch" {
+			pidDir = "/run/libvirt/ch"
 		}
 		mon := virtlauncher.NewProcessMonitor(domainName,
 			pidDir,

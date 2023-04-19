@@ -795,7 +795,7 @@ func (l *LibvirtDomainManager) generateConverterContext(vmi *v1.VirtualMachineIn
 		PermanentVolumes:      permanentVolumes,
 		EphemeraldiskCreator:  l.ephemeralDiskCreator,
 		UseLaunchSecurity:     kutil.IsSEVVMI(vmi),
-		Vmm:                   "qemu", // TODO Hermes derive this value from the VMI spec
+		Vmm:                   "ch", // TODO Hermes derive this value from the VMI spec
 	}
 
 	if options != nil {
@@ -897,10 +897,11 @@ func (l *LibvirtDomainManager) SyncVMI(vmi *v1.VirtualMachineInstance, allowEmul
 	// TODO for migration and error detection we also need the state change reason
 	// TODO blocked state
 	if cli.IsDown(domState) && !vmi.IsRunning() && !vmi.IsFinal() {
-		err = l.generateCloudInitISO(vmi, &dom)
-		if err != nil {
-			return nil, err
-		}
+		// TODO Hermes. Avoiding generating CloudInitISO
+		//err = l.generateCloudInitISO(vmi, &dom)
+		// if err != nil {
+		// 	return nil, err
+		// }
 		createFlags := getDomainCreateFlags(vmi)
 		err = dom.CreateWithFlags(createFlags)
 		if err != nil {

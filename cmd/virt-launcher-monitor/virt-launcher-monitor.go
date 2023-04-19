@@ -54,6 +54,7 @@ func cleanupContainerDiskDirectory(ephemeralDiskDir string) {
 
 func main() {
 
+	vmm := pflag.String("vmm", "qemu", "VMM to be used. Can be either \"qemu\" or \"ch\"")
 	containerDiskDir := pflag.String("container-disk-dir", "/var/run/kubevirt/container-disks", "Base directory for container disk data")
 	keepAfterFailure := pflag.Bool("keep-after-failure", false, "virt-launcher will be kept alive after failure for debugging if set to true")
 
@@ -75,7 +76,7 @@ func main() {
 		}
 	}
 
-	exitCode, err := RunAndMonitor(*containerDiskDir)
+	exitCode, err := RunAndMonitor(*containerDiskDir, *vmm)
 	if *keepAfterFailure && (exitCode != 0 || err != nil) {
 		log.Log.Infof("keeping virt-launcher container alive since --keep-after-failure is set to true")
 		<-make(chan struct{})
@@ -91,7 +92,7 @@ func main() {
 
 // RunAndMonitor run virt-launcher process and monitor it to give qemu an extra grace period to properly terminate
 // in case of crashes
-func RunAndMonitor(containerDiskDir string) (int, error) {
+func RunAndMonitor(containerDiskDir string, vmm string) (int, error) {
 	defer cleanupContainerDiskDirectory(containerDiskDir)
 	defer terminateIstioProxy()
 	args := removeArg(os.Args[1:], "--keep-after-failure")
@@ -138,15 +139,25 @@ func RunAndMonitor(containerDiskDir string) (int, error) {
 		log.Log.Errorf("dirty virt-launcher shutdown: exit-code %d", exitCode)
 	}
 
-	// give qemu some time to shut down in case it survived virt-handler
-	// Most of the time we call `qemu-system=* binaries, but qemu-system-* packages
-	// are not everywhere available where libvirt and qemu are. There we usually call qemu-kvm
-	// which resides in /usr/libexec/qemu-kvm
-	pid, _ := findPid("qemu-system")
-	qemuProcessCommandPrefix := "qemu-system"
-	if pid <= 0 {
-		pid, _ = findPid("qemu-kvm")
-		qemuProcessCommandPrefix = "qemu-kvm"
+	pid := 0
+	vmmProcessCommandPrefix := ""
+	if vmm == "qemu" {
+		// give qemu some time to shut down in case it survived virt-handler
+		// Most of the time we call `qemu-system=* binaries, but qemu-system-* packages
+		// are not everywhere available where libvirt and qemu are. There we usually call qemu-kvm
+		// which resides in /usr/libexec/qemu-kvm
+		pid, _ = findPid("qemu-system")
+		vmmProcessCommandPrefix = "qemu-system"
+		if pid <= 0 {
+			pid, _ = findPid("qemu-kvm")
+			vmmProcessCommandPrefix = "qemu-kvm"
+		}
+	} else if vmm == "ch" {
+		pid, _ = findPid("cloud-hypervisor")
+		vmmProcessCommandPrefix = "cloud-hypervisor"
+	} else {
+		log.Log.Errorf("Provided VMM %s is invalid. It has to be either qemu or ch", vmm)
+		return 1, fmt.Errorf("Provided VMM %s is invalid. It has to be either qemu or ch", vmm)
 	}
 
 	if pid > 0 {
@@ -179,7 +190,7 @@ func RunAndMonitor(containerDiskDir string) (int, error) {
 			case <-timeout:
 				return 1, err
 			case <-period:
-				pid, _ := findPid(qemuProcessCommandPrefix)
+				pid, _ := findPid(vmmProcessCommandPrefix)
 				if pid == 0 {
 					return exitCode, nil
 				}

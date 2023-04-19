@@ -96,16 +96,19 @@ var getHookManager = hooks.GetManager
 
 type LibvirtWrapper struct {
 	user uint32
+	vmm  string
 }
 
-func NewLibvirtWrapper(nonRoot bool) *LibvirtWrapper {
+func NewLibvirtWrapper(nonRoot bool, vmm string) *LibvirtWrapper {
 	if nonRoot {
 		return &LibvirtWrapper{
 			user: util.NonRootUID,
+			vmm:  vmm,
 		}
 	}
 	return &LibvirtWrapper{
 		user: util.RootUser,
+		vmm:  vmm,
 	}
 }
 
@@ -209,8 +212,71 @@ func GetDomainSpecWithFlags(dom cli.VirDomain, flags libvirt.DomainXMLFlags) (*a
 	return domain, nil
 }
 
-// TODO Hermes
-// Need a function for starting libvirtd from the /libvirt/bin/src folder
+func (l LibvirtWrapper) StartVmmDaemon(stopChan chan struct{}) {
+	if l.vmm == "qemu" {
+		l.StartVirtquemud(stopChan)
+	} else if l.vmm == "ch" {
+		// TODO Hermes. Set the location of libvirtd binary
+		l.StartLibvirtd(stopChan)
+	}
+}
+
+func (l LibvirtWrapper) StartLibvirtd(stopChan chan struct{}) {
+	// we spawn libvirtd from virt-launcher in order to ensure the libvirtd process
+	// doesn't exit until virt-launcher is ready for it to. Virt-launcher traps signals
+	// to perform special shutdown logic. These processes need to live in the same
+	// container.
+
+	go func() {
+		for {
+			exitChan := make(chan struct{})
+			args := []string{"-f", "/etc/libvirt/libvirtd.conf"}
+			cmd := exec.Command("/libvirt/build/src/libvirtd", args...)
+
+			// connect libvirt's stderr to our own stdout in order to see the logs in the container logs
+			reader, err := cmd.StderrPipe()
+			if err != nil {
+				log.Log.Reason(err).Error("failed to start libvirtd")
+				panic(err)
+			}
+
+			go func() {
+				scanner := bufio.NewScanner(reader)
+				scanner.Buffer(make([]byte, 1024), 512*1024)
+				for scanner.Scan() {
+					log.LogLibvirtLogLine(log.Log, scanner.Text())
+				}
+
+				if err := scanner.Err(); err != nil {
+					log.Log.Reason(err).Error("failed to read libvirt logs")
+				}
+			}()
+
+			err = cmd.Start()
+			if err != nil {
+				log.Log.Reason(err).Error("failed to start libvirtd")
+				panic(err)
+			}
+
+			go func() {
+				defer close(exitChan)
+				cmd.Wait()
+			}()
+
+			select {
+			case <-stopChan:
+				cmd.Process.Kill()
+				return
+			case <-exitChan:
+				log.Log.Errorf("libvirtd exited, restarting")
+			}
+
+			// this sleep is to avoid consuming all resources in the
+			// event of a virtqemud crash loop.
+			time.Sleep(time.Second)
+		}
+	}()
+}
 
 func (l LibvirtWrapper) StartVirtquemud(stopChan chan struct{}) {
 	// we spawn libvirt from virt-launcher in order to ensure the virtqemud+qemu process
@@ -275,9 +341,9 @@ func (l LibvirtWrapper) StartVirtquemud(stopChan chan struct{}) {
 }
 
 func startVirtlogdLogging(stopChan chan struct{}, domainName string, nonRoot bool) {
+	// TODO Hermes. Change the paths of the executables and conf files
 	for {
-		// TODO Hermes update the path of the executable and the logfile
-		cmd := exec.Command("/usr/sbin/virtlogd", "-f", "/etc/libvirt/virtlogd.conf")
+		cmd := exec.Command("/libvirt/build/src/virtlogd", "-f", "/etc/libvirt/virtlogd.conf") // TODO Hermes. Update the path to binary
 
 		exitChan := make(chan struct{})
 
@@ -388,9 +454,11 @@ func startQEMUSeaBiosLogging(stopChan chan struct{}) {
 	}
 }
 
-func StartVirtlog(stopChan chan struct{}, domainName string, nonRoot bool) {
+func StartVirtlog(stopChan chan struct{}, domainName string, nonRoot bool, vmm string) {
 	go startVirtlogdLogging(stopChan, domainName, nonRoot)
-	go startQEMUSeaBiosLogging(stopChan)
+	if vmm == "qemu" {
+		go startQEMUSeaBiosLogging(stopChan)
+	}
 }
 
 // returns the namespace and name that is encoded in the
@@ -477,7 +545,60 @@ func copyFile(from, to string) error {
 }
 
 func (l LibvirtWrapper) SetupLibvirt(customLogFilters *string) (err error) {
-	// TODO Hermes this function needs change
+	if l.vmm == "qemu" {
+		return l.SetupLibvirtWithQemu(customLogFilters)
+	} else if l.vmm == "ch" {
+		return l.SetupLibvirtWithCh(customLogFilters)
+	} else {
+		return fmt.Errorf("The VMM %s is invalid. VMM has to be one of qemu or ch", l.vmm)
+	}
+}
+
+func (l LibvirtWrapper) SetupLibvirtWithCh(customLogFilters *string) (err error) {
+	// TODO Hermes. Check if Libvirt conf needs to be updated with Debug logging
+
+	// runtimeQemuConfPath := qemuConfPath
+	// if !l.root() {
+	// 	runtimeQemuConfPath = qemuNonRootConfPath
+
+	// 	if err := os.MkdirAll(libvirtHomePath, 0755); err != nil {
+	// 		return err
+	// 	}
+	// 	if err := copyFile(qemuConfPath, runtimeQemuConfPath); err != nil {
+	// 		return err
+	// 	}
+	// }
+
+	// runtimeVirtqemudConfPath := path.Join(libvirtRuntimePath, "virtqemud.conf")
+	// if err := copyFile(virtqemudConfPath, runtimeVirtqemudConfPath); err != nil {
+	// 	return err
+	// }
+
+	/*
+		var libvirtLogVerbosityEnvVar *string
+		if envVarValue, envVarDefined := os.LookupEnv(services.ENV_VAR_VIRT_LAUNCHER_LOG_VERBOSITY); envVarDefined {
+			libvirtLogVerbosityEnvVar = &envVarValue
+		}
+		_, libvirtDebugLogsEnvVarDefined := os.LookupEnv(services.ENV_VAR_LIBVIRT_DEBUG_LOGS)
+
+			if logFilters, enableDebugLogs := getLibvirtLogFilters(customLogFilters, libvirtLogVerbosityEnvVar, libvirtDebugLogsEnvVarDefined); enableDebugLogs {
+				virtqemudConf, err := os.OpenFile(runtimeVirtqemudConfPath, os.O_APPEND|os.O_WRONLY, 0644)
+				if err != nil {
+					return err
+				}
+				defer util.CloseIOAndCheckErr(virtqemudConf, &err)
+
+				log.Log.Infof("Enabling libvirt log filters: %s", logFilters)
+				_, err = virtqemudConf.WriteString(fmt.Sprintf("log_filters=\"%s\"\n", logFilters))
+				if err != nil {
+					return err
+				}
+			}*/
+
+	return nil
+}
+
+func (l LibvirtWrapper) SetupLibvirtWithQemu(customLogFilters *string) (err error) {
 	runtimeQemuConfPath := qemuConfPath
 	if !l.root() {
 		runtimeQemuConfPath = qemuNonRootConfPath
@@ -582,5 +703,5 @@ func getLibvirtLogFilters(customLogFilters, libvirtLogVerbosityEnvVar *string, l
 }
 
 func (l LibvirtWrapper) root() bool {
-	return l.user == 0
+	return l.user == util.RootUser
 }
