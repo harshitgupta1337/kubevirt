@@ -9,8 +9,6 @@ RUN --mount=type=bind,rw,target=. \
 
 FROM mcr.microsoft.com/cbl-mariner/base/core:2.0
 
-COPY --from=builder /build/_out/cmd/virt-controller/virt-controller /usr/bin/
-
 RUN tdnf install -y mariner-repos-preview
 RUN  tdnf -y install \
   ca-certificates \
@@ -20,6 +18,8 @@ RUN  tdnf -y install \
 
 RUN  adduser -u 1001 --create-home -s /bin/bash virt-controller
 USER 1001
+
+COPY --from=builder /build/_out/cmd/virt-controller/virt-controller /usr/bin/
 
 RUN ls /usr/bin/virt-controller
 

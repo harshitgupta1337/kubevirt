@@ -11,10 +11,6 @@ RUN --mount=type=bind,rw,target=. \
 
 FROM mcr.microsoft.com/cbl-mariner/base/core:2.0
 
-COPY --from=builder /build/_out/cmd/virtctl/virtctl /usr/bin/
-COPY --from=builder /build/_out/cmd/virt-operator/virt-operator /usr/bin/
-COPY --from=builder /build/_out/cmd/csv-generator/csv-generator /usr/bin/
-
 RUN tdnf install -y mariner-repos-preview
 RUN tdnf -y install \
   ca-certificates \
@@ -24,6 +20,10 @@ RUN tdnf -y install \
 
 RUN  adduser --system --no-create-home -u 101 virt-operator
 USER 101
+
+COPY --from=builder /build/_out/cmd/virtctl/virtctl /usr/bin/
+COPY --from=builder /build/_out/cmd/virt-operator/virt-operator /usr/bin/
+COPY --from=builder /build/_out/cmd/csv-generator/csv-generator /usr/bin/
 
 RUN ls /usr/bin/virt-operator
 

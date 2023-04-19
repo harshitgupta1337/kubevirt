@@ -13,19 +13,6 @@ RUN --mount=type=bind,rw,target=. \
 FROM mcr.microsoft.com/cbl-mariner/base/core:2.0
 ARG TARGETARCH="amd64"
 
-COPY --from=builder /build/_out/cmd/container-disk-v2alpha/container-disk /usr/bin/
-COPY --from=builder /build/_out/cmd/virt-launcher/virt-launcher /usr/bin/
-COPY --from=builder /build/_out/cmd/virt-launcher-monitor/virt-launcher-monitor /usr/bin/
-COPY --from=builder /build/_out/cmd/virt-freezer/virt-freezer /usr/bin/
-COPY --from=builder /build/_out/cmd/virt-probe/virt-probe /usr/bin/
-COPY --from=builder /build/cmd/virt-launcher/node-labeller/node-labeller.sh /usr/bin/
-
-RUN mkdir -p /usr/share/kube-virt/virt-launcher
-COPY --from=builder /build/cmd/virt-launcher/qemu.conf /usr/share/kube-virt/virt-launcher/
-COPY --from=builder /build/cmd/virt-launcher/virtqemud.conf /usr/share/kube-virt/virt-launcher/
-COPY --from=builder /build/cmd/virt-launcher/nsswitch.conf /usr/share/kube-virt/virt-launcher/
-
-
 RUN tdnf -y install mariner-repos-extended.noarch
 RUN tdnf -y install mariner-repos-preview
 RUN tdnf -y install \
@@ -58,8 +45,49 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
     fi;
 
 RUN  tdnf clean all \
-   && cd /var && rm -rf run && ln -s ../run . \
-   && chown qemu:qemu /var/run
+   && cd /var && rm -rf run && ln -s ../run .
+
+# Now install components needed for cloud-hypervisor
+RUN tdnf -y update \
+    && tdnf -y install dnf dnf-plugins-core \
+    && dnf -y builddep libvirt \
+    && tdnf -y install libvirt \
+    && systemctl disable libvirtd.service \
+    && tdnf install -y git kernel-headers curl-devel
+
+RUN git config --global http.sslVerify false \
+    && git clone -b mshv https://github.com/praveen-pk/libvirt \
+    && cd libvirt/ \
+    && git submodule update --init --recursive subprojects/keycodemapdb/
+
+RUN cd libvirt \
+    && meson build --prefix=/ --libdir=usr/lib -Dapparmor=disabled -Ddocs=disabled -Ddriver_openvz=disabled -Ddriver_vbox=disabled -Ddriver_esx=disabled -Dstorage_iscsi_direct=disabled -Ddriver_qemu=disabled -Ddriver_ch=enabled -Ddriver_qemu=disabled -Dfirewalld=disabled -Dpolkit=disabled \
+    && ninja -C build
+
+RUN tdnf -y install vim wget
+
+RUN wget --no-check-certificate https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/v31.0/cloud-hypervisor-static \
+    && wget --no-check-certificate https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/v31.0/cloud-hypervisor \
+    && chmod +x cloud-hypervisor-static \
+    && chmod +x cloud-hypervisor \
+    && mv cloud-hypervisor-static /usr/bin/ \
+    && mv cloud-hypervisor /usr/bin/
+
+USER 0
+
+# Copy files from the builder
+COPY --from=builder /build/_out/cmd/container-disk-v2alpha/container-disk /usr/bin/
+COPY --from=builder /build/_out/cmd/virt-launcher/virt-launcher /usr/bin/
+COPY --from=builder /build/_out/cmd/virt-launcher-monitor/virt-launcher-monitor /usr/bin/
+COPY --from=builder /build/_out/cmd/virt-freezer/virt-freezer /usr/bin/
+COPY --from=builder /build/_out/cmd/virt-probe/virt-probe /usr/bin/
+COPY --from=builder /build/cmd/virt-launcher/node-labeller/node-labeller.sh /usr/bin/
+
+RUN mkdir -p /usr/share/kube-virt/virt-launcher
+COPY --from=builder /build/cmd/virt-launcher/qemu.conf /usr/share/kube-virt/virt-launcher/
+COPY --from=builder /build/cmd/virt-launcher/virtqemud.conf /usr/share/kube-virt/virt-launcher/
+COPY --from=builder /build/cmd/virt-launcher/nsswitch.conf /usr/share/kube-virt/virt-launcher/
+
 
 # Setup permissions and capabilities for non-root VMIs. KubeVirt sets
 # XDG_* directories to /var/run.
@@ -67,10 +95,18 @@ RUN setcap 'cap_net_bind_service=+ep' /usr/bin/virt-launcher
 RUN setcap 'cap_net_bind_service=+ep' /usr/bin/virt-launcher-monitor
 RUN chmod 0755 /etc/libvirt
 
-RUN cp /usr/share/kube-virt/virt-launcher/qemu.conf /etc/libvirt/
-RUN cp /usr/share/kube-virt/virt-launcher/virtqemud.conf /etc/libvirt/
+RUN cp /libvirt/build/src/virtlogd /usr/sbin/
+RUN cp /libvirt/build/src/libvirtd /usr/sbin/
+
+RUN cp /libvirt/build/src/libvirtd.conf /etc/libvirt/
+RUN cp /libvirt/src/logging/virtlogd.conf /etc/libvirt/
 RUN cp /usr/share/kube-virt/virt-launcher/nsswitch.conf /etc/
 
+RUN echo "log_level = 3" >> /etc/libvirt/libvirtd.conf
+RUN echo "log_outputs=\"3:file:/var/log/libvirt/libvirtd.log\"" >> /etc/libvirt/libvirtd.conf
+
 RUN ls /usr/bin/virt-launcher
+
+RUN touch /tmp/helloworld.txt
 
 ENTRYPOINT [ "/usr/bin/virt-launcher" ]

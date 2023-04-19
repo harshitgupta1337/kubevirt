@@ -10,15 +10,6 @@ RUN --mount=type=bind,rw,target=. \
 
 FROM mcr.microsoft.com/cbl-mariner/base/core:2.0
 
-COPY --from=builder /build/_out/cmd/container-disk-v2alpha/container-disk /usr/bin/
-COPY --from=builder /build/_out/cmd/virt-chroot/virt-chroot /usr/bin/
-COPY --from=builder /build/_out/cmd/virt-handler/virt-handler /usr/bin/
-
-COPY --from=builder /build/cmd/virt-handler/virt_launcher.cil /
-
-RUN mkdir -p /usr/share/kube-virt/virt-handler
-COPY --from=builder /build/cmd/virt-handler/nsswitch.conf /usr/share/kube-virt/virt-handler/
-
 
 RUN tdnf install -y mariner-repos-preview
 RUN tdnf -y install \
@@ -36,6 +27,15 @@ RUN tdnf -y install \
   util-linux \
   && tdnf clean all
 
+
+COPY --from=builder /build/_out/cmd/container-disk-v2alpha/container-disk /usr/bin/
+COPY --from=builder /build/_out/cmd/virt-chroot/virt-chroot /usr/bin/
+COPY --from=builder /build/_out/cmd/virt-handler/virt-handler /usr/bin/
+
+COPY --from=builder /build/cmd/virt-handler/virt_launcher.cil /
+
+RUN mkdir -p /usr/share/kube-virt/virt-handler
+COPY --from=builder /build/cmd/virt-handler/nsswitch.conf /usr/share/kube-virt/virt-handler/
 
 RUN ls /usr/bin/virt-handler
 
