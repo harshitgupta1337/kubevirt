@@ -1279,39 +1279,43 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 	newChannel := Add_Agent_To_api_Channel()
 	domain.Spec.Devices.Channels = append(domain.Spec.Devices.Channels, newChannel)
 
-	domain.Spec.SysInfo = &api.SysInfo{}
+	if c.Vmm != "ch" {
+		domain.Spec.SysInfo = &api.SysInfo{}
+	}
 	if vmi.Spec.Domain.Firmware != nil {
-		domain.Spec.SysInfo.System = []api.Entry{
-			{
-				Name:  "uuid",
-				Value: string(vmi.Spec.Domain.Firmware.UUID),
-			},
-		}
-
-		if vmi.Spec.Domain.Firmware.Bootloader != nil && vmi.Spec.Domain.Firmware.Bootloader.EFI != nil {
-			domain.Spec.OS.BootLoader = &api.Loader{
-				Path:     c.EFIConfiguration.EFICode,
-				ReadOnly: "yes",
-				Secure:   boolToYesNo(&c.EFIConfiguration.SecureLoader, false),
-				Type:     "pflash",
+		if c.Vmm != "ch" {
+			domain.Spec.SysInfo.System = []api.Entry{
+				{
+					Name:  "uuid",
+					Value: string(vmi.Spec.Domain.Firmware.UUID),
+				},
 			}
 
-			domain.Spec.OS.NVRam = &api.NVRam{
-				NVRam:    filepath.Join("/tmp", domain.Spec.Name),
-				Template: c.EFIConfiguration.EFIVars,
-			}
-		}
+			if vmi.Spec.Domain.Firmware.Bootloader != nil && vmi.Spec.Domain.Firmware.Bootloader.EFI != nil {
+				domain.Spec.OS.BootLoader = &api.Loader{
+					Path:     c.EFIConfiguration.EFICode,
+					ReadOnly: "yes",
+					Secure:   boolToYesNo(&c.EFIConfiguration.SecureLoader, false),
+					Type:     "pflash",
+				}
 
-		if vmi.Spec.Domain.Firmware.Bootloader != nil && vmi.Spec.Domain.Firmware.Bootloader.BIOS != nil {
-			if vmi.Spec.Domain.Firmware.Bootloader.BIOS.UseSerial != nil && *vmi.Spec.Domain.Firmware.Bootloader.BIOS.UseSerial {
-				domain.Spec.OS.BIOS = &api.BIOS{
-					UseSerial: "yes",
+				domain.Spec.OS.NVRam = &api.NVRam{
+					NVRam:    filepath.Join("/tmp", domain.Spec.Name),
+					Template: c.EFIConfiguration.EFIVars,
 				}
 			}
-		}
 
-		if len(vmi.Spec.Domain.Firmware.Serial) > 0 {
-			domain.Spec.SysInfo.System = append(domain.Spec.SysInfo.System, api.Entry{Name: "serial", Value: string(vmi.Spec.Domain.Firmware.Serial)})
+			if vmi.Spec.Domain.Firmware.Bootloader != nil && vmi.Spec.Domain.Firmware.Bootloader.BIOS != nil {
+				if vmi.Spec.Domain.Firmware.Bootloader.BIOS.UseSerial != nil && *vmi.Spec.Domain.Firmware.Bootloader.BIOS.UseSerial {
+					domain.Spec.OS.BIOS = &api.BIOS{
+						UseSerial: "yes",
+					}
+				}
+			}
+
+			if len(vmi.Spec.Domain.Firmware.Serial) > 0 {
+				domain.Spec.SysInfo.System = append(domain.Spec.SysInfo.System, api.Entry{Name: "serial", Value: string(vmi.Spec.Domain.Firmware.Serial)})
+			}
 		}
 
 		if util.HasKernelBootContainerImage(vmi) {
@@ -1329,6 +1333,13 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 				initrdPath := containerdisk.GetKernelBootArtifactPathFromLauncherView(kb.Container.InitrdPath)
 				log.Log.Object(vmi).Infof("setting initrd path for kernel boot: " + initrdPath)
 				domain.Spec.OS.Initrd = initrdPath
+			}
+
+			if c.Vmm == "ch" {
+				bootDevice := api.Boot{
+					Dev: "hd",
+				}
+				domain.Spec.OS.BootOrder = append(domain.Spec.OS.BootOrder, bootDevice)
 			}
 
 		}
@@ -1351,7 +1362,7 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 			IOMMU: "on",
 		}
 	}
-	if c.SMBios != nil {
+	if c.SMBios != nil && c.Vmm != "ch" {
 		domain.Spec.SysInfo.System = append(domain.Spec.SysInfo.System,
 			api.Entry{
 				Name:  "manufacturer",
@@ -1380,34 +1391,36 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 	// SMBios option does not work in Power, attempting to set it will result in the following error message:
 	// "Option not supported for this target" issued by qemu-system-ppc64, so don't set it in case GOARCH is ppc64le
 	// ARM64 use UEFI boot by default, set SMBios is unnecessory.
-	if isAMD64(c.Architecture) {
-		domain.Spec.OS.SMBios = &api.SMBios{
-			Mode: "sysinfo",
+	if c.Vmm != "ch" {
+		if isAMD64(c.Architecture) {
+			domain.Spec.OS.SMBios = &api.SMBios{
+				Mode: "sysinfo",
+			}
 		}
-	}
 
-	if vmi.Spec.Domain.Chassis != nil {
-		domain.Spec.SysInfo.Chassis = []api.Entry{
-			{
-				Name:  "manufacturer",
-				Value: string(vmi.Spec.Domain.Chassis.Manufacturer),
-			},
-			{
-				Name:  "version",
-				Value: string(vmi.Spec.Domain.Chassis.Version),
-			},
-			{
-				Name:  "serial",
-				Value: string(vmi.Spec.Domain.Chassis.Serial),
-			},
-			{
-				Name:  "asset",
-				Value: string(vmi.Spec.Domain.Chassis.Asset),
-			},
-			{
-				Name:  "sku",
-				Value: string(vmi.Spec.Domain.Chassis.Sku),
-			},
+		if vmi.Spec.Domain.Chassis != nil {
+			domain.Spec.SysInfo.Chassis = []api.Entry{
+				{
+					Name:  "manufacturer",
+					Value: string(vmi.Spec.Domain.Chassis.Manufacturer),
+				},
+				{
+					Name:  "version",
+					Value: string(vmi.Spec.Domain.Chassis.Version),
+				},
+				{
+					Name:  "serial",
+					Value: string(vmi.Spec.Domain.Chassis.Serial),
+				},
+				{
+					Name:  "asset",
+					Value: string(vmi.Spec.Domain.Chassis.Asset),
+				},
+				{
+					Name:  "sku",
+					Value: string(vmi.Spec.Domain.Chassis.Sku),
+				},
+			}
 		}
 	}
 
@@ -1548,7 +1561,6 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 		}
 
 		if _, ok := c.HotplugVolumes[disk.Name]; !ok {
-			// TODO Hermes. This function is going to be used for Hermes.
 			err = Convert_v1_Volume_To_api_Disk(volume, &newDisk, c, volumeIndices[disk.Name])
 		} else {
 			err = Convert_v1_Hotplug_Volume_To_api_Disk(volume, &newDisk, c)
@@ -1614,9 +1626,11 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 		domain.Spec.Devices.Rng = newRng
 	}
 
-	// TODO Hermes. Remove this because even model=None doesn't work with CloudHypervisor
-	//domain.Spec.Devices.Ballooning = &api.MemBalloon{}
-	//ConvertV1ToAPIBalloning(&vmi.Spec.Domain.Devices, domain.Spec.Devices.Ballooning, c)
+	// CloudHypervisor does not support even model=None
+	if c.Vmm != "ch" {
+		domain.Spec.Devices.Ballooning = &api.MemBalloon{}
+		ConvertV1ToAPIBalloning(&vmi.Spec.Domain.Devices, domain.Spec.Devices.Ballooning, c)
+	}
 
 	if vmi.Spec.Domain.Devices.Inputs != nil {
 		inputDevices := make([]api.Input, 0)
@@ -1686,7 +1700,7 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 		}
 	}
 
-	if machine := vmi.Spec.Domain.Machine; machine != nil {
+	if machine := vmi.Spec.Domain.Machine; machine != nil && c.Vmm != "ch" {
 		domain.Spec.OS.Type.Machine = machine.Type
 	}
 
@@ -1740,36 +1754,48 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 
 	if vmi.Spec.Domain.Devices.AutoattachSerialConsole == nil || *vmi.Spec.Domain.Devices.AutoattachSerialConsole == true {
 		// Add mandatory console device
-		domain.Spec.Devices.Controllers = append(domain.Spec.Devices.Controllers, api.Controller{
-			Type:   "virtio-serial",
-			Index:  "0",
-			Model:  translateModel(c, v1.VirtIO),
-			Driver: controllerDriver,
-		})
+		if c.Vmm == "ch" {
+			var serialPort uint = 0
+			domain.Spec.Devices.Serials = []api.Serial{
+				{
+					Type: "pty",
+					Target: &api.SerialTarget{
+						Port: &serialPort,
+					},
+				},
+			}
+		} else {
+			domain.Spec.Devices.Controllers = append(domain.Spec.Devices.Controllers, api.Controller{
+				Type:   "virtio-serial",
+				Index:  "0",
+				Model:  translateModel(c, v1.VirtIO),
+				Driver: controllerDriver,
+			})
 
-		var serialPort uint = 0
-		var serialType string = "serial"
-		domain.Spec.Devices.Consoles = []api.Console{
-			{
-				Type: "pty",
-				Target: &api.ConsoleTarget{
-					Type: &serialType,
-					Port: &serialPort,
+			var serialPort uint = 0
+			var serialType string = "serial"
+			domain.Spec.Devices.Consoles = []api.Console{
+				{
+					Type: "pty",
+					Target: &api.ConsoleTarget{
+						Type: &serialType,
+						Port: &serialPort,
+					},
 				},
-			},
-		}
+			}
 
-		domain.Spec.Devices.Serials = []api.Serial{
-			{
-				Type: "unix",
-				Target: &api.SerialTarget{
-					Port: &serialPort,
+			domain.Spec.Devices.Serials = []api.Serial{
+				{
+					Type: "unix",
+					Target: &api.SerialTarget{
+						Port: &serialPort,
+					},
+					Source: &api.SerialSource{
+						Mode: "bind",
+						Path: fmt.Sprintf("/var/run/kubevirt-private/%s/virt-serial%d", vmi.ObjectMeta.UID, serialPort),
+					},
 				},
-				Source: &api.SerialSource{
-					Mode: "bind",
-					Path: fmt.Sprintf("/var/run/kubevirt-private/%s/virt-serial%d", vmi.ObjectMeta.UID, serialPort),
-				},
-			},
+			}
 		}
 	}
 

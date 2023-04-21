@@ -107,6 +107,6 @@ RUN echo "log_outputs=\"3:file:/var/log/libvirt/libvirtd.log\"" >> /etc/libvirt/
 
 RUN ls /usr/bin/virt-launcher
 
-RUN touch /tmp/helloworld.txt
+RUN mkdir /run/lock
 
 ENTRYPOINT [ "/usr/bin/virt-launcher" ]

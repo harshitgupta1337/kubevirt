@@ -19,7 +19,6 @@ spec:
               kernelPath: /boot/hypervisor-fw
               imagePullPolicy: Always
         devices:
-          autoattachSerialConsole: false
           autoattachGraphicsDevice: false
           autoattachMemBalloon: false
           disks:
