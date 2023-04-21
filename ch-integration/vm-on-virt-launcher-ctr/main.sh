@@ -13,4 +13,4 @@ ctr=$(docker run -d --privileged virt-launcher:test)
 $SCRIPT_DIR/copy-files-to-docker.sh $ctr
 
 # Now run the VM in the container
-docker exec -it $ctr /launch-ch-vm.sh
+docker exec -it $ctr virsh create /vm.xml

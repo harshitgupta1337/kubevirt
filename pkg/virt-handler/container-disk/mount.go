@@ -324,6 +324,8 @@ func (m *mounter) MountAndVerify(vmi *v1.VirtualMachineInstance) (map[string]*co
 	err = m.mountKernelArtifacts(vmi, true)
 	if err != nil {
 		return nil, fmt.Errorf("error mounting kernel artifacts: %v", err)
+	} else {
+		log.DefaultLogger().Object(vmi).Infof("mounting kernel artifacts succeeded")
 	}
 
 	return disksInfo, nil

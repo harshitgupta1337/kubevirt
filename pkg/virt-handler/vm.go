@@ -877,7 +877,12 @@ func (d *VirtualMachineController) updateVolumeStatusesFromDomain(vmi *v1.Virtua
 	if len(vmi.Status.VolumeStatus) > 0 {
 		diskDeviceMap := make(map[string]string)
 		for _, disk := range domain.Spec.Devices.Disks {
-			diskDeviceMap[disk.Alias.GetName()] = disk.Target.Device
+			// TODO Hermes. Following rootfs is added as a hacky fix till bug https://microsoft.visualstudio.com/OS/_workitems/edit/44268746 is not fixed
+			if strings.Contains(disk.Source.File, "rootfs") {
+				diskDeviceMap["rootfs"] = disk.Target.Device
+			}
+			// TODO Hermes. CH-enabled libvirt removes disk alias, even though the alias is present in the XML genererated by virt-launcher. Thus we're not using target device to uniquely identify the disk.
+			// diskDeviceMap[disk.Alias.GetName()] = disk.Target.Device
 		}
 		specVolumeMap := make(map[string]v1.Volume)
 		for _, volume := range vmi.Spec.Volumes {
@@ -1824,6 +1829,7 @@ func (d *VirtualMachineController) defaultExecute(key string,
 		if err != nil {
 			return err
 		}
+		log.Log.Object(vmi).V(3).Infof("DEBUG vmi.Status.Phase = %v, domain phase = %v", vmi.Status.Phase, phase)
 		if vmi.Status.Phase == phase {
 			shouldUpdate = true
 		}
