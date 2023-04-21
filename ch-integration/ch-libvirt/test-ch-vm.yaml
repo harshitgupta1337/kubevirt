@@ -1,0 +1,36 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  labels:
+    kubevirt.io/vm: kubevirt-ch-vm
+  name: kubevirt-ch-vm
+spec:
+  running: true
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: kubevirt-ch-vm
+    spec:
+      domain:
+        firmware:
+          kernelBoot:
+            container:
+              image: harshitg/hypervisor-fw:mariner
+              kernelPath: /boot/hypervisor-fw
+              imagePullPolicy: Always
+        devices:
+          autoattachSerialConsole: false
+          autoattachGraphicsDevice: false
+          autoattachMemBalloon: false
+          disks:
+          - disk:
+              bus: virtio
+            name: rootfs 
+        resources:
+          requests:
+            memory: 128Mi
+      terminationGracePeriodSeconds: 0
+      volumes:
+      - dataVolume:
+          name: ch-test-dv
+        name: rootfs
