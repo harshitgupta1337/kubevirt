@@ -25,9 +25,11 @@ spec:
           - disk:
               bus: virtio
             name: rootfs 
+        cpu:
+          cores: 2
         resources:
           requests:
-            memory: 128Mi
+            memory: 1024Mi
       terminationGracePeriodSeconds: 0
       volumes:
       - dataVolume:
