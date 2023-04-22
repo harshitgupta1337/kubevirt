@@ -25,6 +25,9 @@ spec:
           - disk:
               bus: virtio
             name: rootfs 
+          - disk:
+              bus: virtio
+            name: cloudinit
         cpu:
           cores: 2
         resources:
@@ -35,3 +38,6 @@ spec:
       - dataVolume:
           name: ch-test-dv
         name: rootfs
+      - dataVolume:
+          name: ch-cloudinit-dv
+        name: cloudinit
