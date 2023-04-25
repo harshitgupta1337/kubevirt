@@ -55,7 +55,8 @@ RUN tdnf -y update \
     && systemctl disable libvirtd.service \
     && tdnf install -y git kernel-headers curl-devel
 
-RUN git config --global http.sslVerify false \
+RUN echo '20230425.1'>/dev/null \
+    && git config --global http.sslVerify false \
     && git clone -b mshv https://github.com/praveen-pk/libvirt \
     && cd libvirt/ \
     && git submodule update --init --recursive subprojects/keycodemapdb/
@@ -102,8 +103,8 @@ RUN cp /libvirt/build/src/libvirtd.conf /etc/libvirt/
 RUN cp /libvirt/src/logging/virtlogd.conf /etc/libvirt/
 RUN cp /usr/share/kube-virt/virt-launcher/nsswitch.conf /etc/
 
-RUN echo "log_level = 3" >> /etc/libvirt/libvirtd.conf
-RUN echo "log_outputs=\"3:file:/var/log/libvirt/libvirtd.log\"" >> /etc/libvirt/libvirtd.conf
+RUN echo "log_level = 1" >> /etc/libvirt/libvirtd.conf
+RUN echo "log_outputs=\"1:file:/var/log/libvirt/libvirtd.log\"" >> /etc/libvirt/libvirtd.conf
 
 RUN ls /usr/bin/virt-launcher
 
