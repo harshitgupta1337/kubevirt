@@ -448,7 +448,7 @@ func main() {
 	events := make(chan watch.Event, 2)
 	// TODO Hermes. Commenting domain event monitoring because agent doesn't exist rn
 	// // Send domain notifications to virt-handler
-	// startDomainEventMonitoring(notifier, *virtShareDir, domainConn, events, vmi, domainName, &agentStore, *qemuAgentSysInterval, *qemuAgentFileInterval, *qemuAgentUserInterval, *qemuAgentVersionInterval, *qemuAgentFSFreezeStatusInterval, metadataCache)
+	startDomainEventMonitoring(notifier, *virtShareDir, domainConn, events, vmi, domainName, &agentStore, *qemuAgentSysInterval, *qemuAgentFileInterval, *qemuAgentUserInterval, *qemuAgentVersionInterval, *qemuAgentFSFreezeStatusInterval, metadataCache) // TODO QEMU Rename variables to VMM
 	fmt.Println(*qemuAgentSysInterval, *qemuAgentFileInterval, *qemuAgentUserInterval, *qemuAgentVersionInterval, *qemuAgentFSFreezeStatusInterval)
 
 	c := make(chan os.Signal, 1)
