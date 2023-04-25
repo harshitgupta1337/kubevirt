@@ -84,7 +84,16 @@ func (vim *virtIOInterfaceManager) hotplugVirtioInterface(vmi *v1.VirtualMachine
 
 func domainInterfaceFromNetwork(domain *api.Domain, network v1.Network) *api.Interface {
 	for _, iface := range domain.Spec.Devices.Interfaces {
-		if iface.Alias.GetName() == network.Name {
+		var ifaceAlias string
+		if iface.Alias == nil {
+			// TODO Hermes
+			// Alias is not being persisted in Domain XML
+			// Bug to track https://dev.azure.com/mariner-org/ECF/_queries/edit/4785/?triage=true
+			ifaceAlias = "default"
+		} else {
+			ifaceAlias = iface.Alias.GetName()
+		}
+		if ifaceAlias == network.Name {
 			return &iface
 		}
 	}
@@ -116,7 +125,16 @@ func networksToHotplugWhoseInterfacesAreNotInTheDomain(vmi *v1.VirtualMachineIns
 func indexedDomainInterfaces(domain *api.Domain) map[string]api.Interface {
 	domainInterfaces := map[string]api.Interface{}
 	for _, iface := range domain.Spec.Devices.Interfaces {
-		domainInterfaces[iface.Alias.GetName()] = iface
+		var ifaceAlias string
+		if iface.Alias == nil {
+			// TODO Hermes
+			// Alias is not being persisted in Domain XML
+			// Bug to track https://dev.azure.com/mariner-org/ECF/_queries/edit/4785/?triage=true
+			ifaceAlias = "default"
+		} else {
+			ifaceAlias = iface.Alias.GetName()
+		}
+		domainInterfaces[ifaceAlias] = iface
 	}
 	return domainInterfaces
 }
