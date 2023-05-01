@@ -1754,48 +1754,36 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 
 	if vmi.Spec.Domain.Devices.AutoattachSerialConsole == nil || *vmi.Spec.Domain.Devices.AutoattachSerialConsole == true {
 		// Add mandatory console device
-		if c.Vmm == "ch" {
-			var serialPort uint = 0
-			domain.Spec.Devices.Serials = []api.Serial{
-				{
-					Type: "pty",
-					Target: &api.SerialTarget{
-						Port: &serialPort,
-					},
-				},
-			}
-		} else {
-			domain.Spec.Devices.Controllers = append(domain.Spec.Devices.Controllers, api.Controller{
-				Type:   "virtio-serial",
-				Index:  "0",
-				Model:  translateModel(c, v1.VirtIO),
-				Driver: controllerDriver,
-			})
+		domain.Spec.Devices.Controllers = append(domain.Spec.Devices.Controllers, api.Controller{
+			Type:   "virtio-serial",
+			Index:  "0",
+			Model:  translateModel(c, v1.VirtIO),
+			Driver: controllerDriver,
+		})
 
-			var serialPort uint = 0
-			var serialType string = "serial"
-			domain.Spec.Devices.Consoles = []api.Console{
-				{
-					Type: "pty",
-					Target: &api.ConsoleTarget{
-						Type: &serialType,
-						Port: &serialPort,
-					},
+		var serialPort uint = 0
+		var serialType string = "serial"
+		domain.Spec.Devices.Consoles = []api.Console{
+			{
+				Type: "pty",
+				Target: &api.ConsoleTarget{
+					Type: &serialType,
+					Port: &serialPort,
 				},
-			}
+			},
+		}
 
-			domain.Spec.Devices.Serials = []api.Serial{
-				{
-					Type: "unix",
-					Target: &api.SerialTarget{
-						Port: &serialPort,
-					},
-					Source: &api.SerialSource{
-						Mode: "bind",
-						Path: fmt.Sprintf("/var/run/kubevirt-private/%s/virt-serial%d", vmi.ObjectMeta.UID, serialPort),
-					},
+		domain.Spec.Devices.Serials = []api.Serial{
+			{
+				Type: "unix",
+				Target: &api.SerialTarget{
+					Port: &serialPort,
 				},
-			}
+				Source: &api.SerialSource{
+					Mode: "bind",
+					Path: fmt.Sprintf("/var/run/kubevirt-private/%s/virt-serial%d", vmi.ObjectMeta.UID, serialPort),
+				},
+			},
 		}
 	}
 
