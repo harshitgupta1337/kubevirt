@@ -897,11 +897,12 @@ func (l *LibvirtDomainManager) SyncVMI(vmi *v1.VirtualMachineInstance, allowEmul
 	// TODO for migration and error detection we also need the state change reason
 	// TODO blocked state
 	if cli.IsDown(domState) && !vmi.IsRunning() && !vmi.IsFinal() {
-		// TODO Hermes. Avoiding generating CloudInitISO
-		//err = l.generateCloudInitISO(vmi, &dom)
-		// if err != nil {
-		// 	return nil, err
-		// }
+		// TODO Hermes. Replace ISO with Raw cloud-init for CH VMs
+		// https://dev.azure.com/mariner-org/ECF/_workitems/edit/4844/
+		err = l.generateCloudInitISO(vmi, &dom)
+		if err != nil {
+			return nil, err
+		}
 		createFlags := getDomainCreateFlags(vmi)
 		err = dom.CreateWithFlags(createFlags)
 		if err != nil {

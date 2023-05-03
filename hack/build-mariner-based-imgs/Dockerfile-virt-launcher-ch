@@ -110,4 +110,9 @@ RUN ls /usr/bin/virt-launcher
 
 RUN mkdir /run/lock
 
+# Add more tools in virt-launcher for generating cloudinit for CH VMs
+RUN tdnf install -y dosfstools \
+    && curl -o mtools.rpm http://mirror.centos.org/centos/7/os/x86_64/Packages/mtools-4.0.18-5.el7.x86_64.rpm \
+    && tdnf install -y --nogpgcheck mtools.rpm
+
 ENTRYPOINT [ "/usr/bin/virt-launcher" ]
