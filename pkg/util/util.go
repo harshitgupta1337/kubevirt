@@ -38,11 +38,10 @@ const RootUser = 0
 const memoryDumpOverhead = 100 * 1024 * 1024
 
 func IsNonRootVMI(vmi *v1.VirtualMachineInstance) bool {
-	return false // TODO Hermes. For now we force the VMI to be root
-	// _, ok := vmi.Annotations[v1.DeprecatedNonRootVMIAnnotation]
+	_, ok := vmi.Annotations[v1.DeprecatedNonRootVMIAnnotation]
 
-	// nonRoot := vmi.Status.RuntimeUser != 0
-	// return ok || nonRoot
+	nonRoot := vmi.Status.RuntimeUser != 0
+	return ok || nonRoot
 }
 
 func IsSRIOVVmi(vmi *v1.VirtualMachineInstance) bool {
