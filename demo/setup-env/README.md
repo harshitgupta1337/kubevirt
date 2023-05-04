@@ -1,5 +1,7 @@
 ## Prerequisites
 
+IMPORTANT: Do this only when the machine is rebooted, or if a new machine is being setup.
+
 Execute the script `./remount-dirs.sh` to mount K8s and container runtime storage directories on `/mnt`.
 
 ## Create a K8s cluster
