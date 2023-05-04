@@ -4,6 +4,8 @@ IMPORTANT: Do this only when the machine is rebooted, or if a new machine is bei
 
 Execute the script `./remount-dirs.sh` to mount K8s and container runtime storage directories on `/mnt`.
 
+IMPORTANT: Remember to keep running `sudo docker system prune` regularly to cleanup disk space.
+
 ## Create a K8s cluster
 
 ```
