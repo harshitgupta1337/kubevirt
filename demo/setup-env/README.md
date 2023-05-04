@@ -15,6 +15,9 @@ cd platform-helm-charts/
 # Build the Helm charts
 make build
 
+# Remove any existing KinD cluster
+./tests/scripts/cleanup.sh
+
 # Create a KinD (K8s in Docker) cluster
 ./tests/scripts/create-kind-cluster.sh
 
