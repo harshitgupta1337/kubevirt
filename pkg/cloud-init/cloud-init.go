@@ -627,20 +627,20 @@ func GenerateLocalDataRaw(vmi *v1.VirtualMachineInstance, instanceType string, d
 	if err != nil {
 		return err
 	}
-	//defer os.Remove(userFile) TODO Hermes Uncomment this
+	defer os.Remove(userFile)
 
 	err = os.WriteFile(metaFile, metaData, 0600)
 	if err != nil {
 		return err
 	}
-	//defer os.Remove(metaFile) TODO Hermes Uncomment this
+	defer os.Remove(metaFile)
 
 	if len(networkData) > 0 {
 		err = os.WriteFile(networkFile, networkData, 0600)
 		if err != nil {
 			return err
 		}
-		//defer os.Remove(networkFile) TODO Hermes Uncomment this
+		defer os.Remove(networkFile)
 	}
 
 	// Now generate the raw cloudinit file
