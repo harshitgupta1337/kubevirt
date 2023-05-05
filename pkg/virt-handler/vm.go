@@ -1152,7 +1152,7 @@ func IsoGuestVolumePath(vmi *v1.VirtualMachineInstance, volume *v1.Volume) (stri
 
 	basepath := "/var/run"
 	if volume.CloudInitNoCloud != nil {
-		volPath = filepath.Join(basepath, "kubevirt-ephemeral-disks", "cloud-init-data", vmi.Namespace, vmi.Name, "noCloud.iso")
+		volPath = filepath.Join(basepath, "kubevirt-ephemeral-disks", "cloud-init-data", vmi.Namespace, vmi.Name, "noCloud.iso") // TODO Hermes This needs work
 	} else if volume.CloudInitConfigDrive != nil {
 		volPath = filepath.Join(basepath, "kubevirt-ephemeral-disks", "cloud-init-data", vmi.Namespace, vmi.Name, "configdrive.iso")
 	} else if volume.ConfigMap != nil {
