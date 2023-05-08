@@ -1,39 +1,25 @@
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
-  labels:
-    kubevirt.io/vm: kubevirt-ch-vm
   name: kubevirt-ch-vm
 spec:
   running: true
   template:
-    metadata:
-      labels:
-        kubevirt.io/vm: kubevirt-ch-vm
     spec:
       domain:
-        firmware:
-          kernelBoot:
-            container:
-              image: harshitg/hypervisor-fw:mariner
-              kernelPath: /boot/hypervisor-fw
-              imagePullPolicy: Always
-        devices:
-          autoattachGraphicsDevice: false
-          autoattachMemBalloon: false
-          disks:
-          - disk:
-              bus: virtio
-            name: rootfs 
-          - disk:
-              bus: virtio
-            name: cloudinit
         cpu:
           cores: 2
         resources:
           requests:
             memory: 1024Mi
-      terminationGracePeriodSeconds: 0
+        devices:
+          disks:
+          - disk:
+              bus: virtio
+            name: rootfs 
+          - cdrom:
+              bus: sata
+            name: cloudinit
       volumes:
       - dataVolume:
           name: ch-test-dv
@@ -45,6 +31,11 @@ spec:
             - name: cloud
               plain_text_passwd: cloud123
               lock_passwd: False
-
-          
         name: cloudinit
+  dataVolumeTemplates:      
+  - apiVersion: cdi.kubevirt.io/v1beta1
+    kind: DataVolume
+    metadata:
+      name: ch-test-dv
+    spec:
+      ... 
