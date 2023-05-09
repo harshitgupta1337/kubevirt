@@ -134,6 +134,7 @@ func ValidateVirtualMachineInstanceSpec(field *k8sfield.Path, spec *v1.VirtualMa
 		return appendNewStatusCauseForMaxNumberOfVolumesExceeded(field, causes)
 	}
 	root := config.RootEnabled()
+	causes = append(causes, validateVmm(field, spec)...)
 	causes = append(causes, validateHostNameNotConformingToDNSLabelRules(field, spec)...)
 	causes = append(causes, validateSubdomainDNSSubdomainRules(field, spec)...)
 	causes = append(causes, validateMemoryRequestsNegativeOrNull(field, spec)...)
@@ -1457,6 +1458,17 @@ func validateSubdomainDNSSubdomainRules(field *k8sfield.Path, spec *v1.VirtualMa
 				Field: field.Child("subdomain").String(),
 			})
 		}
+	}
+	return causes
+}
+
+func validateVmm(field *k8sfield.Path, spec *v1.VirtualMachineInstanceSpec) (causes []metav1.StatusCause) {
+	if !(spec.Vmm == "qemu" || spec.Vmm == "ch") {
+		causes = append(causes, metav1.StatusCause{
+			Type:    metav1.CauseTypeFieldValueInvalid,
+			Message: fmt.Sprintf("%s should be either qemu or ch. Provided VMM = %s", field.String(), spec.Vmm),
+			Field:   field.String(),
+		})
 	}
 	return causes
 }
