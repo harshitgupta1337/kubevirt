@@ -78,6 +78,8 @@ const (
 
 // VirtualMachineInstanceSpec is a description of a VirtualMachineInstance.
 type VirtualMachineInstanceSpec struct {
+	// The VMM to use for the VMI. Possible values are "qemu" for QEMU and "ch" for Cloud Hypervisor.
+	Vmm string `json:"vmm,omitempty"`
 
 	// If specified, indicates the pod's priority.
 	// If not specified, the pod priority will be default or zero if there is no

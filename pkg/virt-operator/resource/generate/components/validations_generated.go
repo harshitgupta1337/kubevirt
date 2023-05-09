@@ -6291,6 +6291,10 @@ var CRDsValidation map[string]string = map[string]string{
                   - topologyKey
                   - whenUnsatisfiable
                   x-kubernetes-list-type: map
+                vmm:
+                  description: The VMM to use for the VMI. Possible values are "qemu"
+                    for QEMU and "ch" for Cloud Hypervisor.
+                  type: string
                 volumes:
                   description: List of volumes that can be mounted by disks belonging
                     to the vmi.
@@ -10507,6 +10511,10 @@ var CRDsValidation map[string]string = map[string]string{
           - topologyKey
           - whenUnsatisfiable
           x-kubernetes-list-type: map
+        vmm:
+          description: The VMM to use for the VMI. Possible values are "qemu" for
+            QEMU and "ch" for Cloud Hypervisor.
+          type: string
         volumes:
           description: List of volumes that can be mounted by disks belonging to the
             vmi.
@@ -15189,6 +15197,10 @@ var CRDsValidation map[string]string = map[string]string{
                   - topologyKey
                   - whenUnsatisfiable
                   x-kubernetes-list-type: map
+                vmm:
+                  description: The VMM to use for the VMI. Possible values are "qemu"
+                    for QEMU and "ch" for Cloud Hypervisor.
+                  type: string
                 volumes:
                   description: List of volumes that can be mounted by disks belonging
                     to the vmi.
@@ -19227,6 +19239,10 @@ var CRDsValidation map[string]string = map[string]string{
                           - topologyKey
                           - whenUnsatisfiable
                           x-kubernetes-list-type: map
+                        vmm:
+                          description: The VMM to use for the VMI. Possible values
+                            are "qemu" for QEMU and "ch" for Cloud Hypervisor.
+                          type: string
                         volumes:
                           description: List of volumes that can be mounted by disks
                             belonging to the vmi.
@@ -23975,6 +23991,10 @@ var CRDsValidation map[string]string = map[string]string{
                               - topologyKey
                               - whenUnsatisfiable
                               x-kubernetes-list-type: map
+                            vmm:
+                              description: The VMM to use for the VMI. Possible values
+                                are "qemu" for QEMU and "ch" for Cloud Hypervisor.
+                              type: string
                             volumes:
                               description: List of volumes that can be mounted by
                                 disks belonging to the vmi.
