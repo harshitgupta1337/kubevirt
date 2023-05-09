@@ -795,7 +795,7 @@ func (l *LibvirtDomainManager) generateConverterContext(vmi *v1.VirtualMachineIn
 		PermanentVolumes:      permanentVolumes,
 		EphemeraldiskCreator:  l.ephemeralDiskCreator,
 		UseLaunchSecurity:     kutil.IsSEVVMI(vmi),
-		Vmm:                   "ch", // TODO Hermes derive this value from the VMI spec
+		Vmm:                   vmi.Spec.Vmm,
 	}
 
 	if options != nil {

@@ -21929,6 +21929,13 @@ func schema_kubevirtio_api_core_v1_VirtualMachineInstanceSpec(ref common.Referen
 				Description: "VirtualMachineInstanceSpec is a description of a VirtualMachineInstance.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
+					"vmm": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The VMM to use for the VMI. Possible values are \"qemu\" for QEMU and \"ch\" for Cloud Hypervisor.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
 					"priorityClassName": {
 						SchemaProps: spec.SchemaProps{
 							Description: "If specified, indicates the pod's priority. If not specified, the pod priority will be default or zero if there is no default.",

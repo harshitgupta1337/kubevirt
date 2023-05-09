@@ -356,7 +356,7 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 		logger := log.DefaultLogger()
 		logger.Infof("nonRoot = %v", nonRoot)
 		command = []string{"/usr/bin/virt-launcher-monitor",
-			"--vmm", "ch", // TODO Hermes generalize this
+			"--vmm", vmi.Spec.Vmm,
 			"--vmm-timeout", generateVmmTimeoutWithJitter(t.launcherVmmTimeout),
 			"--name", domain,
 			"--uid", string(vmi.UID),
