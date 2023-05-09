@@ -55,7 +55,7 @@ RUN tdnf -y update \
     && systemctl disable libvirtd.service \
     && tdnf install -y git kernel-headers curl-devel
 
-RUN echo '20230425.1'>/dev/null \
+RUN echo '20230426.1'>/dev/null \
     && git config --global http.sslVerify false \
     && git clone -b mshv https://github.com/praveen-pk/libvirt \
     && cd libvirt/ \
