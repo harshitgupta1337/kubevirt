@@ -458,12 +458,12 @@ func (l *LibvirtDomainManager) MigrateVMI(vmi *v1.VirtualMachineInstance, option
 	return l.startMigration(vmi, options)
 }
 
-func (l *LibvirtDomainManager) generateSomeCloudInitISO(vmi *v1.VirtualMachineInstance, domPtr *cli.VirDomain, size int64, vmm string) error {
+func (l *LibvirtDomainManager) generateSomeCloudInitISO(vmi *v1.VirtualMachineInstance, domPtr *cli.VirDomain, size int64) error {
 	var devicesMetadata []cloudinit.DeviceData
 	// this is the point where we need to build the devices metadata if it was requested.
 	// This metadata maps the user provided tag to the hypervisor assigned device address.
 
-	/* // TODO Hermes. This functionality is not used with ConfigDrive cloudinit
+	/* // TODO Hermes. This functionality is not used with NoCloud cloudinit
 	if domPtr != nil {
 		data, err := l.buildDevicesMetadata(vmi, *domPtr)
 		if err != nil {
@@ -484,7 +484,7 @@ func (l *LibvirtDomainManager) generateSomeCloudInitISO(vmi *v1.VirtualMachineIn
 		}
 		var err error
 		if size != 0 {
-			err = cloudinit.GenerateEmptyIso(vmi.Name, vmi.Namespace, cloudInitDataStore, size)
+			err = cloudinit.GenerateEmptyIso(vmi.Name, vmi.Namespace, cloudInitDataStore, size, vmi.Spec.Vmm)
 		} else {
 			// ClusterInstancetype will take precedence over a namespaced Instancetype
 			// for setting instance_type in the metadata
@@ -493,7 +493,7 @@ func (l *LibvirtDomainManager) generateSomeCloudInitISO(vmi *v1.VirtualMachineIn
 				instancetype = vmi.Annotations[v1.InstancetypeAnnotation]
 			}
 
-			err = cloudinit.GenerateLocalData(vmi, instancetype, cloudInitDataStore, vmm)
+			err = cloudinit.GenerateLocalData(vmi, instancetype, cloudInitDataStore)
 		}
 		if err != nil {
 			return fmt.Errorf("generating local cloud-init data failed: %v", err)
@@ -502,8 +502,8 @@ func (l *LibvirtDomainManager) generateSomeCloudInitISO(vmi *v1.VirtualMachineIn
 	return nil
 }
 
-func (l *LibvirtDomainManager) generateCloudInitISO(vmi *v1.VirtualMachineInstance, domPtr *cli.VirDomain, vmm string) error {
-	return l.generateSomeCloudInitISO(vmi, domPtr, 0, vmm)
+func (l *LibvirtDomainManager) generateCloudInitISO(vmi *v1.VirtualMachineInstance, domPtr *cli.VirDomain) error {
+	return l.generateSomeCloudInitISO(vmi, domPtr, 0)
 }
 
 func (l *LibvirtDomainManager) generateCloudInitEmptyISO(vmi *v1.VirtualMachineInstance, domPtr *cli.VirDomain) error {
@@ -512,7 +512,7 @@ func (l *LibvirtDomainManager) generateCloudInitEmptyISO(vmi *v1.VirtualMachineI
 	}
 	for _, vs := range vmi.Status.VolumeStatus {
 		if vs.Name == l.cloudInitDataStore.VolumeName {
-			return l.generateSomeCloudInitISO(vmi, domPtr, vs.Size, "ch") // TODO Hermes. Get this value from VMI spec
+			return l.generateSomeCloudInitISO(vmi, domPtr, vs.Size)
 		}
 	}
 	return fmt.Errorf("failed to find the status of volume %s", l.cloudInitDataStore.VolumeName)
@@ -900,10 +900,7 @@ func (l *LibvirtDomainManager) SyncVMI(vmi *v1.VirtualMachineInstance, allowEmul
 	// TODO for migration and error detection we also need the state change reason
 	// TODO blocked state
 	if cli.IsDown(domState) && !vmi.IsRunning() && !vmi.IsFinal() {
-		// TODO Hermes. Replace ISO with Raw cloud-init for CH VMs
-		// https://dev.azure.com/mariner-org/ECF/_workitems/edit/4844/
-		vmm := "ch" // TODO Hermes. Derive VMM from VMI spec
-		err = l.generateCloudInitISO(vmi, &dom, vmm)
+		err = l.generateCloudInitISO(vmi, &dom)
 		if err != nil {
 			return nil, err
 		}
