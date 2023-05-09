@@ -41,10 +41,27 @@ spec:
       - cloudInitNoCloud:
           userData: |
             #cloud-config
-            users
+            users:
             - name: cloud
               plain_text_passwd: cloud123
               lock_passwd: False
-
-          
+              shell: /bin/bash
         name: cloudinit
+  dataVolumeTemplates:
+  - apiVersion: cdi.kubevirt.io/v1beta1
+    kind: DataVolume
+    metadata:
+      name: ch-test-dv
+      labels:
+        name: ch-test-dv
+    spec:
+      source:
+        registry:
+          url: "docker://docker.io/harshitg/ch-test-disk:mariner"
+      pvc:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: "local-path"
