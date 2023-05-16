@@ -37,7 +37,7 @@ spec:
       terminationGracePeriodSeconds: 0
       volumes:
       - dataVolume:
-          name: ch-test-dv
+          name: ch-rootfs-dv
         name: rootfs
       - cloudInitNoCloud:
           userData: |
@@ -52,9 +52,9 @@ spec:
   - apiVersion: cdi.kubevirt.io/v1beta1
     kind: DataVolume
     metadata:
-      name: ch-test-dv
+      name: ch-rootfs-dv
       labels:
-        name: ch-test-dv
+        name: ch-rootfs-dv
     spec:
       source:
         registry:

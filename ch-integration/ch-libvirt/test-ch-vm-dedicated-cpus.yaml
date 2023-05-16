@@ -30,7 +30,9 @@ spec:
               bus: virtio
             name: cloudinit
         cpu:
+          dedicatedCpuPlacement: true
           cores: 2
+          model: host-passthrough
         resources:
           requests:
             memory: 1024Mi
@@ -39,41 +41,15 @@ spec:
       - dataVolume:
           name: ch-rootfs-dv
         name: rootfs
-      - dataVolume:
-          name: ch-cloudinit-dv
+      - cloudInitNoCloud:
+          userData: |
+            #cloud-config
+            ssh_pwauth: true
+            users:
+            - name: cloud
+              plain_text_passwd: cloud123
+              lock_passwd: False
+              shell: /bin/bash
+              ssh_authorized_keys:
+              - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDCGHQwG2ZzS4pjeYf71lnQHevngHXQuXQsPHgZANN1IRsLQz1NeUCjTvCThTm7qtTBgNXmyqNfsvxrX3rTWFxEzzHnuqXdtqEYkFBcmwweQm3BRpr+fMkd2435VD7XY6OAzVywNT3m666msf4ACIRxJVvLSuWzRSWM5BUMCJCv419UeFb4FBX+q/NiNpMU9FNHMzyTdjxzna0J/pAxCA2AXy0/IdP52bp4nibFuBQoRYq2G649jlVWzyeAkn0sk6XCXwBefgbVfyQaVZwkKIVH6HAd8aQIW8bdtoQsK7EZouhfi0sT543YDsTMY53dys1ICUuD+HMQ4MB1Cv0NbJpceWwPH/r56NB24qwlFqsX/94/tP3KeaJGarXX68xq9UiPEk/bkY7C9B/EcGJ26RLKXIupxv0rvky23jmHR9RFQJZ1fm2MhCZ1P2ifaHjYx0heGigW6sraY2Y7y+C4bwYfI96PRpM50NtaIL91jXHcBxvpE5cL+JjcHPeCEzYeRes= ubuntu@vashishtha"
         name: cloudinit
-  dataVolumeTemplates:
-  - apiVersion: cdi.kubevirt.io/v1beta1
-    kind: DataVolume
-    metadata:
-      name: ch-rootfs-dv
-      labels:
-        name: ch-rootfs-dv
-    spec:
-      source:
-        registry:
-          url: "docker://docker.io/harshitg/ch-test-disk:mariner"
-      pvc:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 10Gi
-        storageClassName: "local-path"
-  - apiVersion: cdi.kubevirt.io/v1beta1
-    kind: DataVolume
-    metadata:
-      name: ch-cloudinit-dv
-      labels:
-        name: ch-cloudinit-dv
-    spec:
-      source:
-        registry:
-          url: "docker://docker.io/harshitg/ch-cloudinit-disk:mariner"
-      pvc:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 500Mi
-        storageClassName: "local-path"
