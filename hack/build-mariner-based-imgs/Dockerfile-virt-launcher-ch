@@ -55,10 +55,10 @@ RUN tdnf -y update \
     && systemctl disable libvirtd.service \
     && tdnf install -y git kernel-headers curl-devel
 
-RUN echo '20230426.1'>/dev/null \
-    && git config --global http.sslVerify false \
+RUN git config --global http.sslVerify false \
     && git clone -b mshv https://github.com/praveen-pk/libvirt \
     && cd libvirt/ \
+    && git checkout e77dab74107a7ab234e77d7fbfd1b04f51a401ed \
     && git submodule update --init --recursive subprojects/keycodemapdb/
 
 RUN cd libvirt \
