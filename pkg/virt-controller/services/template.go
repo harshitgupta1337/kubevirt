@@ -659,7 +659,7 @@ func (t *templateService) newContainerSpecRenderer(vmi *v1.VirtualMachineInstanc
 		computeContainerOpts = append(computeContainerOpts, WithNonRoot(userId))
 		computeContainerOpts = append(computeContainerOpts, WithDropALLCapabilities())
 	}
-	if t.IsPPC64() || true { // TODO Hermes. Setting virt-launcher container to privileged to run VMs.
+	if t.IsPPC64() || vmi.Spec.Vmm == "ch" { // Setting virt-launcher container to privileged to run VMs.
 		computeContainerOpts = append(computeContainerOpts, WithPrivileged())
 	}
 	if vmi.Spec.ReadinessProbe != nil {
