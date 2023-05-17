@@ -339,7 +339,7 @@ func (app *virtHandlerApp) Run() {
 	// Currently nodeLabeller only support x86_64
 	var capabilities *api.Capabilities
 	var hostCpuModel string
-	if virtconfig.IsAMD64(runtime.GOARCH) {
+	if virtconfig.IsAMD64(runtime.GOARCH) && false { // TODO Hermes MSHV/KVM. Not labeling nodes because CH Libvirt driver doesn't support listing domain capabilities
 		nodeLabellerrecorder := broadcaster.NewRecorder(scheme.Scheme, k8sv1.EventSource{Component: "node-labeller", Host: app.HostOverride})
 		nodeLabellerController, err := nodelabeller.NewNodeLabeller(app.clusterConfig, app.virtCli, app.HostOverride, app.namespace, nodeLabellerrecorder)
 		if err != nil {

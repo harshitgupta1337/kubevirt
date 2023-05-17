@@ -8,6 +8,8 @@ if ! uname -m | grep x86_64; then
   exit 0
 fi
 
+exit 0 # TODO Hermes MSHV. Returning right now because CH-Libvirt doesn't support virConnectGetDomainCapabilities
+
 KVM_MINOR=$(grep -w 'kvm' /proc/misc | cut -f 1 -d' ')
 VIRTTYPE=qemu
 

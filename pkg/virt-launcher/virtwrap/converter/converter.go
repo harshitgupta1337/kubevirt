@@ -1072,7 +1072,7 @@ func Convert_v1_Clock_To_api_Clock(source *v1.Clock, clock *api.Clock) error {
 			newTimer.TickPolicy = string(source.Timer.PIT.TickPolicy)
 			clock.Timer = append(clock.Timer, newTimer)
 		}
-		if source.Timer.KVM != nil {
+		if source.Timer.KVM != nil { // TODO Hermes KVM Timer kvmclock
 			newTimer := api.Timer{Name: "kvmclock"}
 			newTimer.Present = boolToYesNo(source.Timer.KVM.Enabled, true)
 			clock.Timer = append(clock.Timer, newTimer)
@@ -1263,15 +1263,19 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 		CPUs:      cpuCount,
 	}
 
-	kvmPath := "/dev/kvm"
-	if softwareEmulation, err := util.UseSoftwareEmulationForDevice(kvmPath, c.AllowEmulation); err != nil {
+	hypervisor := "kvm"
+	if vmi.Spec.Vmm == "ch" {
+		hypervisor = "mshv"
+	}
+	hypervisorDevPath := fmt.Sprintf("/dev/%s", hypervisor)
+	if softwareEmulation, err := util.UseSoftwareEmulationForDevice(hypervisorDevPath, c.AllowEmulation); err != nil {
 		return err
 	} else if softwareEmulation {
 		logger := log.DefaultLogger()
-		logger.Infof("Hardware emulation device '%s' not present. Using software emulation.", kvmPath)
+		logger.Infof("Hardware emulation device '%s' not present. Using software emulation.", hypervisorDevPath)
 		domain.Spec.Type = "qemu"
-	} else if _, err := os.Stat(kvmPath); errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("hardware emulation device '%s' not present", kvmPath)
+	} else if _, err := os.Stat(hypervisorDevPath); errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("hardware emulation device '%s' not present", hypervisorDevPath)
 	} else if err != nil {
 		return err
 	}
