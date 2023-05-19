@@ -454,7 +454,7 @@ func getRequiredResources(vmi *v1.VirtualMachineInstance, allowEmulation bool) k
 	}
 	if !allowEmulation {
 		if vmi.Spec.Vmm == "ch" {
-			//res[MshvDevice] = resource.MustParse("1") // TODO Hermes KVM/MSHV. Node isn't being labeled with MSHV. Once the problem is fixed, uncomment this line to enable virt-launcher pod requesting MSHV Device
+			//res[MshvDevice] = resource.MustParse("1") // TODO Hermes KVM/MSHV. Node isn't being labeled with MSHV. Once the problem is fixed, uncomment this line to enable virt-launcher pod requesting MSHV Device. Bug to track https://dev.azure.com/mariner-org/ECF/_queries/edit/4984/?triage=true
 		} else {
 			res[KvmDevice] = resource.MustParse("1")
 		}

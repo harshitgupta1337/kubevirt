@@ -340,6 +340,7 @@ func (app *virtHandlerApp) Run() {
 	var capabilities *api.Capabilities
 	var hostCpuModel string
 	if virtconfig.IsAMD64(runtime.GOARCH) && false { // TODO Hermes MSHV/KVM. Not labeling nodes because CH Libvirt driver doesn't support listing domain capabilities
+	// This bug needs to be fixed to reenable this block https://dev.azure.com/mariner-org/ECF/_queries/edit/4984/?triage=true
 		nodeLabellerrecorder := broadcaster.NewRecorder(scheme.Scheme, k8sv1.EventSource{Component: "node-labeller", Host: app.HostOverride})
 		nodeLabellerController, err := nodelabeller.NewNodeLabeller(app.clusterConfig, app.virtCli, app.HostOverride, app.namespace, nodeLabellerrecorder)
 		if err != nil {
