@@ -62,7 +62,7 @@ func (d *Defaulter) SetDefaults_OSType(ostype *OSType) {
 func (d *Defaulter) SetDefaults_DomainSpec(spec *DomainSpec) {
 	spec.XmlNS = "http://libvirt.org/schemas/domain/qemu/1.0"
 	if spec.Type == "" {
-		spec.Type = "kvm"
+		spec.Type = "kvm" // TODO Hermes. Needs to be generalized for MSHV
 	}
 }
 

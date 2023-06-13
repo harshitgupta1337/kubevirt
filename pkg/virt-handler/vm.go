@@ -2659,9 +2659,13 @@ func (d *VirtualMachineController) vmUpdateHelperMigrationTarget(origVMI *v1.Vir
 		return err
 	}
 
-	err = d.claimDeviceOwnership(virtLauncherRootMount, "kvm")
+	hypervisor := "kvm"
+	if vmi.Spec.Vmm == "ch" {
+		hypervisor = "mshv"
+	}
+	err = d.claimDeviceOwnership(virtLauncherRootMount, hypervisor)
 	if err != nil {
-		return fmt.Errorf("failed to set up file ownership for /dev/kvm: %v", err)
+		return fmt.Errorf("failed to set up file ownership for /dev/%s: %v", hypervisor, err)
 	}
 	if virtutil.IsAutoAttachVSOCK(vmi) {
 		if err := d.claimDeviceOwnership(virtLauncherRootMount, "vhost-vsock"); err != nil {
@@ -2749,8 +2753,14 @@ func (d *VirtualMachineController) configureHousekeepingCgroup(vmi *v1.VirtualMa
 			return err
 		}
 		comm := proc.Executable()
-		if strings.Contains(comm, "CPU ") && strings.Contains(comm, "KVM") {
-			continue
+		if vmi.Spec.Vmm == "ch" {
+			if strings.Contains(comm, "vcpu") {
+				continue
+			}
+		} else {
+			if strings.Contains(comm, "CPU ") && strings.Contains(comm, "KVM") { // TODO Hermes KVM. Use the regex to do this instead
+				continue
+			}
 		}
 		hktids = append(hktids, tid)
 	}
@@ -2823,9 +2833,13 @@ func (d *VirtualMachineController) vmUpdateHelperDefault(origVMI *v1.VirtualMach
 			return err
 		}
 
-		err = d.claimDeviceOwnership(virtLauncherRootMount, "kvm")
+		hypervisor := "kvm"
+		if vmi.Spec.Vmm == "ch" {
+			hypervisor = "mshv"
+		}
+		err = d.claimDeviceOwnership(virtLauncherRootMount, hypervisor)
 		if err != nil {
-			return fmt.Errorf("failed to set up file ownership for /dev/kvm: %v", err)
+			return fmt.Errorf("failed to set up file ownership for /dev/%s: %v", hypervisor, err)
 		}
 		if virtutil.IsAutoAttachVSOCK(vmi) {
 			if err := d.claimDeviceOwnership(virtLauncherRootMount, "vhost-vsock"); err != nil {
