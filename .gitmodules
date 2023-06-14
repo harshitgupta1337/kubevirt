@@ -1,0 +1,4 @@
+[submodule "demo/platform-helm-charts"]
+	path = demo/platform-helm-charts
+	url = git@ssh.dev.azure.com:v3/mariner-org/ECF/platform-helm-charts
+	branch = user/guptaharshit/hermes-ch-kubevirt
