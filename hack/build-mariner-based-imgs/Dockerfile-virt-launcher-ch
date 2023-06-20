@@ -55,7 +55,7 @@ RUN tdnf -y update \
     && systemctl disable libvirtd.service \
     && tdnf install -y git kernel-headers curl-devel
 
-RUN echo '20230426.1'>/dev/null \
+RUN echo '20230613.1'>/dev/null \
     && git config --global http.sslVerify false \
     && git clone -b mshv https://github.com/praveen-pk/libvirt \
     && cd libvirt/ \
@@ -66,13 +66,6 @@ RUN cd libvirt \
     && ninja -C build
 
 RUN tdnf -y install vim wget
-
-RUN wget --no-check-certificate https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/v31.0/cloud-hypervisor-static \
-    && wget --no-check-certificate https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/v31.0/cloud-hypervisor \
-    && chmod +x cloud-hypervisor-static \
-    && chmod +x cloud-hypervisor \
-    && mv cloud-hypervisor-static /usr/bin/ \
-    && mv cloud-hypervisor /usr/bin/
 
 USER 0
 
@@ -112,5 +105,17 @@ RUN mkdir /run/lock
 
 # Add more tools in virt-launcher for generating cloudinit for CH VMs
 RUN tdnf install -y dosfstools
+
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y \
+    && source "$HOME/.cargo/env" \
+    && export CLOUDH=$HOME/cloud-hypervisor \
+    && mkdir $CLOUDH \
+    && cd $CLOUDH \
+    && echo '20230614.1'>/dev/null \
+    && git clone -b mshv https://github.com/praveen-pk/cloud-hypervisor.git \
+    && cd cloud-hypervisor \
+    && cargo build --release \
+    && setcap cap_net_admin+ep ./target/release/cloud-hypervisor \
+    && cp ./target/release/cloud-hypervisor /usr/bin/
 
 ENTRYPOINT [ "/usr/bin/virt-launcher" ]
