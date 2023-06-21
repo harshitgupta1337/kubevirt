@@ -114,7 +114,7 @@ RUN curl -sSf https://sh.rustup.rs | sh -s -- -y \
     && echo '20230614.1'>/dev/null \
     && git clone -b mshv https://github.com/praveen-pk/cloud-hypervisor.git \
     && cd cloud-hypervisor \
-    && cargo build --release \
+    && cargo build --release --features mshv \
     && setcap cap_net_admin+ep ./target/release/cloud-hypervisor \
     && cp ./target/release/cloud-hypervisor /usr/bin/
 

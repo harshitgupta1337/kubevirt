@@ -29,6 +29,9 @@ spec:
           - disk:
               bus: virtio
             name: cloudinit
+          - disk:
+              bus: virtio
+            name: additional-disk
         cpu:
           cores: 2
         resources:
@@ -39,6 +42,9 @@ spec:
       - dataVolume:
           name: ch-test-dv
         name: rootfs
+      - dataVolume:
+          name: additional-disk-dv
+        name: additional-disk
       - cloudInitNoCloud:
           userData: |
             #cloud-config
@@ -49,6 +55,8 @@ spec:
               shell: /bin/bash
               ssh-authorized-keys:
               - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDCGHQwG2ZzS4pjeYf71lnQHevngHXQuXQsPHgZANN1IRsLQz1NeUCjTvCThTm7qtTBgNXmyqNfsvxrX3rTWFxEzzHnuqXdtqEYkFBcmwweQm3BRpr+fMkd2435VD7XY6OAzVywNT3m666msf4ACIRxJVvLSuWzRSWM5BUMCJCv419UeFb4FBX+q/NiNpMU9FNHMzyTdjxzna0J/pAxCA2AXy0/IdP52bp4nibFuBQoRYq2G649jlVWzyeAkn0sk6XCXwBefgbVfyQaVZwkKIVH6HAd8aQIW8bdtoQsK7EZouhfi0sT543YDsTMY53dys1ICUuD+HMQ4MB1Cv0NbJpceWwPH/r56NB24qwlFqsX/94/tP3KeaJGarXX68xq9UiPEk/bkY7C9B/EcGJ26RLKXIupxv0rvky23jmHR9RFQJZ1fm2MhCZ1P2ifaHjYx0heGigW6sraY2Y7y+C4bwYfI96PRpM50NtaIL91jXHcBxvpE5cL+JjcHPeCEzYeRes= ubuntu@vashishtha
+            runcmd:
+              - mount /dev/vdc /mnt/
         name: cloudinit
   dataVolumeTemplates:
   - apiVersion: cdi.kubevirt.io/v1beta1
@@ -67,4 +75,21 @@ spec:
         resources:
           requests:
             storage: 10Gi
+        storageClassName: "local-path"
+  - apiVersion: cdi.kubevirt.io/v1beta1
+    kind: DataVolume
+    metadata:
+      name: additional-disk-dv
+      labels:
+        name: additional-disk-dv
+    spec:
+      source:
+        registry:
+          url: "docker://docker.io/harshitg/additional-disk:test"
+      pvc:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
         storageClassName: "local-path"

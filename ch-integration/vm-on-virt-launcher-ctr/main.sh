@@ -7,7 +7,7 @@ docker build -t virt-launcher:test \
 
 $SCRIPT_DIR/create-prereq-files.sh
 
-ctr=$(docker run -d --privileged virt-launcher:test)
+ctr=$(docker run -d --privileged --name virt-launcher-test virt-launcher:test)
 
 # Copy the needed files into the container
 $SCRIPT_DIR/copy-files-to-docker.sh $ctr
