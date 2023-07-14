@@ -55,10 +55,10 @@ RUN tdnf -y update \
     && systemctl disable libvirtd.service \
     && tdnf install -y git kernel-headers curl-devel
 
-RUN echo '20230613.1'>/dev/null \
-    && git config --global http.sslVerify false \
+RUN git config --global http.sslVerify false \
     && git clone -b mshv https://github.com/praveen-pk/libvirt \
     && cd libvirt/ \
+    && git checkout 0ccf31812e3cd5c5575bf94af25f067297defe0e \
     && git submodule update --init --recursive subprojects/keycodemapdb/
 
 RUN cd libvirt \
@@ -111,9 +111,9 @@ RUN curl -sSf https://sh.rustup.rs | sh -s -- -y \
     && export CLOUDH=$HOME/cloud-hypervisor \
     && mkdir $CLOUDH \
     && cd $CLOUDH \
-    && echo '20230614.1'>/dev/null \
     && git clone -b mshv https://github.com/praveen-pk/cloud-hypervisor.git \
     && cd cloud-hypervisor \
+    && git checkout 23fe8142355d93bbaf55887edf992264a90ffe72 \
     && cargo build --release --features mshv \
     && setcap cap_net_admin+ep ./target/release/cloud-hypervisor \
     && cp ./target/release/cloud-hypervisor /usr/bin/
