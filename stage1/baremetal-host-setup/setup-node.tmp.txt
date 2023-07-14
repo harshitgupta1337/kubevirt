@@ -1,0 +1,47 @@
+ls /dev/kvm
+ls /dev/mshv
+sudo tdnf update
+iptables
+iptables -P INPUT ACCEPT
+sudo iptables -P INPUT ACCEPT
+sudo iptables -P OUTPUT ACCEPT
+sudo iptables -P FORWARD ACCEPT
+systemctl status sshd
+kubeadm
+sudo tdnf install kubeadm
+cat /etc/os-release 
+tdnf -y install mariner-repos-extended.noarch
+sudo tdnf -y install mariner-repos-extended.noarch
+sudo tdnf -y install mariner-repos-preview
+sudo tdnf update
+sudo tdnf install containerd
+sudo tdnf install kubeadm
+sudo tdnf install containerd.io
+sudo tdnf install kubernetes
+sudo tdnf install moby-containerd
+ls
+kubectl get pods
+kubectl get pods -A
+mkdir .kube
+sudo cp /etc/kubernetes/admin.conf .kube/config
+sudo chown -R guptaharshit .kube/
+sudo tdnf install ms-container-image-import-1.0.0-1.cm2.x86_64.rpm 
+cd x86_64/ms-kubernetes-1.24.9-kubeadm-1.24.9-2.cm2.x86_64.rpm
+ls ms-kubernetes-1.24.9-*
+sudo tdnf install -y ms-kubernetes-1.24.9-*
+systemctl status containerd
+hostnamectl set-hostname pmec-demo
+sudo hostnamectl set-hostname pmec-demo
+hostname
+kubeadm init --config kubeadm-config.yaml --v=5
+sudo kubeadm init --config kubeadm-config.yaml
+modprobe br_netfilter
+sudo modprobe br_netfilter
+sudo echo '1' > /proc/sys/net/ipv4/ip_forward
+echo '1' > /proc/sys/net/ipv4/ip_forward
+cat /proc/sys/net/ipv4/ip_forward
+sudo kubeadm init --config kubeadm-config.yaml
+sudo tdnf install conntrack
+sudo kubeadm init --config kubeadm-config.yaml
+kubectl get pods
+kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/v0.19.2/Documentation/kube-flannel.yml
