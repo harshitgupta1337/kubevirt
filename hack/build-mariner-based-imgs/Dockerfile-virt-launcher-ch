@@ -10,7 +10,7 @@ RUN --mount=type=bind,rw,target=. \
       cmd/virt-probe
 
 
-FROM mcr.microsoft.com/cbl-mariner/base/core:2.0
+FROM mcr.microsoft.com/cbl-mariner/base/core:2.0@sha256:997710e0e84781c1243f927ceafe0f1082d09e318b4f9f222bd82d057b4470cf
 ARG TARGETARCH="amd64"
 
 RUN tdnf -y install mariner-repos-extended.noarch
@@ -58,7 +58,7 @@ RUN tdnf -y update \
 RUN git config --global http.sslVerify false \
     && git clone -b mshv https://github.com/praveen-pk/libvirt \
     && cd libvirt/ \
-    && git checkout 0ccf31812e3cd5c5575bf94af25f067297defe0e \
+    && git checkout 3ce89f909f6a417055c2ea7a724949bc2fabf482 \
     && git submodule update --init --recursive subprojects/keycodemapdb/
 
 RUN cd libvirt \
@@ -113,7 +113,7 @@ RUN curl -sSf https://sh.rustup.rs | sh -s -- -y \
     && cd $CLOUDH \
     && git clone -b mshv https://github.com/praveen-pk/cloud-hypervisor.git \
     && cd cloud-hypervisor \
-    && git checkout 23fe8142355d93bbaf55887edf992264a90ffe72 \
+    && git checkout 7ee81ecf253e1b9021d35eb19be7cb65aa3893b0 \
     && cargo build --release --features mshv \
     && setcap cap_net_admin+ep ./target/release/cloud-hypervisor \
     && cp ./target/release/cloud-hypervisor /usr/bin/
