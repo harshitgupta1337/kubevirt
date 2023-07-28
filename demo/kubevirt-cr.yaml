@@ -21,6 +21,10 @@ spec:
     developerConfiguration:
       featureGates:
       - Root
+      - CPUManager
+      - DataVolumes
+      - ExpandDisks
+      - HostDevices
   customizeComponents: {}
   imagePullPolicy: IfNotPresent
   workloadUpdateStrategy: {}
