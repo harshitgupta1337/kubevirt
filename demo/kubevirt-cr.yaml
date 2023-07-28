@@ -25,6 +25,7 @@ spec:
       - DataVolumes
       - ExpandDisks
       - HostDevices
+      - NUMA
   customizeComponents: {}
   imagePullPolicy: IfNotPresent
   workloadUpdateStrategy: {}
