@@ -2,3 +2,7 @@
 	path = demo/platform-helm-charts
 	url = git@ssh.dev.azure.com:v3/mariner-org/ECF/platform-helm-charts
 	branch = user/guptaharshit/hermes-ch-kubevirt
+[submodule "stage1/k8s-tests"]
+	path = stage1/k8s-tests
+	url = git@ssh.dev.azure.com:v3/mariner-org/ECF/k8s-tests
+	branch = user/guptaharshit/hermes-ch-kubevirt

@@ -21,6 +21,11 @@ spec:
     developerConfiguration:
       featureGates:
       - Root
+      - CPUManager
+      - DataVolumes
+      - ExpandDisks
+      - HostDevices
+      - NUMA
   customizeComponents: {}
   imagePullPolicy: IfNotPresent
   workloadUpdateStrategy: {}
