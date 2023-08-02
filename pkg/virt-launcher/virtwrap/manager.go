@@ -1914,7 +1914,9 @@ func getDomainCreateFlags(vmi *v1.VirtualMachineInstance) libvirt.DomainCreateFl
 		flags |= libvirt.DOMAIN_START_PAUSED
 	}
 	if vmi.IsCPUDedicated() && vmi.Spec.Domain.CPU.IsolateEmulatorThread {
-		flags |= libvirt.DOMAIN_START_PAUSED
+		// TODO flags |= libvirt.DOMAIN_START_PAUSED
+    // TODO Hermes MSHV: Not adding this flag because Cloud-Hypervisor does not support it.
+    // cgroups housekeeping is done by libvirt itself
 	}
 	return flags
 }

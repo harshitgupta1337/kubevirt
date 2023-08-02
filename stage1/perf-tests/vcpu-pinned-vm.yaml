@@ -33,7 +33,7 @@ spec:
           cores: 2
           model: host-passthrough
           dedicatedCpuPlacement: true
-          isolateEmulatorThread: false
+          isolateEmulatorThread: true
           sockets: 1
           threads: 1
         resources:
