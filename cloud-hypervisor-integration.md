@@ -8,6 +8,16 @@ Fork from the upstream KubeVirt project. To download the latest source code, use
 
 ## Building Mariner-based KubeVirt component images
 
+First, generate the boiler-plate code using the following commands.
+
+```
+
+make generate
+
+make
+
+```
+
 Build the Mariner-based images for KubeVirt components, such as `virt-operator`, `virt-launcher`, etc. following the build tooling used by Nexus.
 
 ```bash
