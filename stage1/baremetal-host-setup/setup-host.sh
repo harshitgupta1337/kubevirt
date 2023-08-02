@@ -25,4 +25,4 @@ kubectl get pods -A
 
 kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/v0.19.2/Documentation/kube-flannel.yml
 
-kubectl taint node hermes-new-loader node-role.kubernetes.io/control-plane-
+kubectl taint node --all node-role.kubernetes.io/control-plane-
