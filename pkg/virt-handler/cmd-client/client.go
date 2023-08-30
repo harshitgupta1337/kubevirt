@@ -104,7 +104,7 @@ type LauncherClient interface {
 	GuestPing(string, int32) error
 	Close()
 	VirtualMachineMemoryDump(vmi *v1.VirtualMachineInstance, dumpPath string) error
-	GetQemuVersion() (string, error)
+	GetVmmVersion() (string, error)
 }
 
 type VirtLauncherClient struct {
@@ -571,17 +571,17 @@ func (c *VirtLauncherClient) GetDomain() (*api.Domain, bool, error) {
 	return domain, exists, nil
 }
 
-func (c *VirtLauncherClient) GetQemuVersion() (string, error) {
+func (c *VirtLauncherClient) GetVmmVersion() (string, error) {
 	request := &cmdv1.EmptyRequest{}
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	defer cancel()
 
-	versionResponse, err := c.v1client.GetQemuVersion(ctx, request)
+	versionResponse, err := c.v1client.GetVmmVersion(ctx, request)
 	var response *cmdv1.Response
 	if versionResponse != nil {
 		response = versionResponse.Response
 	}
-	if err = handleError(err, "GetQemuVersion", response); err != nil {
+	if err = handleError(err, "GetVmmVersion", response); err != nil {
 		return "", err
 	}
 
@@ -589,8 +589,8 @@ func (c *VirtLauncherClient) GetQemuVersion() (string, error) {
 		return versionResponse.Version, nil
 	}
 
-	log.Log.Reason(err).Error("error getting the qemu version")
-	return "", errors.New("error getting the qemu version")
+	log.Log.Reason(err).Error("error getting the VMM version")
+	return "", errors.New("error getting the VMM version")
 }
 
 func (c *VirtLauncherClient) GetDomainStats() (*stats.DomainStats, bool, error) {

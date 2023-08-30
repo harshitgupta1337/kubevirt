@@ -127,7 +127,7 @@ type DomainManager interface {
 	Exec(string, string, []string, int32) (string, error)
 	GuestPing(string) error
 	MemoryDump(vmi *v1.VirtualMachineInstance, dumpPath string) error
-	GetQemuVersion() (string, error)
+	GetVmmVersion() (string, error)
 }
 
 type LibvirtDomainManager struct {
@@ -297,7 +297,7 @@ func (l *LibvirtDomainManager) setGuestTime(vmi *v1.VirtualMachineInstance) erro
 
 					switch libvirtError.Code {
 					case libvirt.ERR_AGENT_UNRESPONSIVE:
-						const unresponsive = "failed to set time: QEMU agent unresponsive"
+						const unresponsive = "failed to set time: QEMU agent unresponsive" // TODO QEMU What to do with agent?
 						latestErr = fmt.Errorf("%s, %s", unresponsive, err)
 						log.Log.Object(vmi).Reason(err).V(9).Warning(unresponsive)
 					case libvirt.ERR_OPERATION_UNSUPPORTED:
@@ -462,6 +462,8 @@ func (l *LibvirtDomainManager) generateSomeCloudInitISO(vmi *v1.VirtualMachineIn
 	var devicesMetadata []cloudinit.DeviceData
 	// this is the point where we need to build the devices metadata if it was requested.
 	// This metadata maps the user provided tag to the hypervisor assigned device address.
+
+	/* // TODO Hermes. This functionality is not used with NoCloud cloudinit
 	if domPtr != nil {
 		data, err := l.buildDevicesMetadata(vmi, *domPtr)
 		if err != nil {
@@ -469,6 +471,7 @@ func (l *LibvirtDomainManager) generateSomeCloudInitISO(vmi *v1.VirtualMachineIn
 		}
 		devicesMetadata = data
 	}
+	*/
 	// build condif drive iso file, that includes devices metadata if available
 	// get stored cloud init data
 	var cloudInitDataStore *cloudinit.CloudInitData
@@ -481,7 +484,7 @@ func (l *LibvirtDomainManager) generateSomeCloudInitISO(vmi *v1.VirtualMachineIn
 		}
 		var err error
 		if size != 0 {
-			err = cloudinit.GenerateEmptyIso(vmi.Name, vmi.Namespace, cloudInitDataStore, size)
+			err = cloudinit.GenerateEmptyIso(vmi.Name, vmi.Namespace, cloudInitDataStore, size, vmi.Spec.Vmm)
 		} else {
 			// ClusterInstancetype will take precedence over a namespaced Instancetype
 			// for setting instance_type in the metadata
@@ -632,7 +635,7 @@ func (l *LibvirtDomainManager) preStartHook(vmi *v1.VirtualMachineInstance, doma
 		converter.SetOptimalIOMode(&domain.Spec.Devices.Disks[i])
 	}
 
-	if err := l.credManager.HandleQemuAgentAccessCredentials(vmi); err != nil {
+	if err := l.credManager.HandleQemuAgentAccessCredentials(vmi); err != nil { // TODO QEMU
 		return domain, fmt.Errorf("Starting qemu agent access credential propagation failed: %v", err)
 	}
 
@@ -795,6 +798,7 @@ func (l *LibvirtDomainManager) generateConverterContext(vmi *v1.VirtualMachineIn
 		PermanentVolumes:      permanentVolumes,
 		EphemeraldiskCreator:  l.ephemeralDiskCreator,
 		UseLaunchSecurity:     kutil.IsSEVVMI(vmi),
+		Vmm:                   vmi.Spec.Vmm,
 	}
 
 	if options != nil {
@@ -1642,8 +1646,8 @@ func (l *LibvirtDomainManager) setDomainSpecWithHooks(vmi *v1.VirtualMachineInst
 	return util.SetDomainSpecStrWithHooks(l.virConn, vmi, origSpec)
 }
 
-func (l *LibvirtDomainManager) GetQemuVersion() (string, error) {
-	return l.virConn.GetQemuVersion()
+func (l *LibvirtDomainManager) GetVmmVersion() (string, error) {
+	return l.virConn.GetVmmVersion()
 }
 
 func (l *LibvirtDomainManager) GetDomainStats() ([]*stats.DomainStats, error) {
@@ -1910,7 +1914,9 @@ func getDomainCreateFlags(vmi *v1.VirtualMachineInstance) libvirt.DomainCreateFl
 		flags |= libvirt.DOMAIN_START_PAUSED
 	}
 	if vmi.IsCPUDedicated() && vmi.Spec.Domain.CPU.IsolateEmulatorThread {
-		flags |= libvirt.DOMAIN_START_PAUSED
+		// TODO flags |= libvirt.DOMAIN_START_PAUSED
+    // TODO Hermes MSHV: Not adding this flag because Cloud-Hypervisor does not support it.
+    // cgroups housekeeping is done by libvirt itself
 	}
 	return flags
 }

@@ -94,9 +94,9 @@ const (
 
 	defaultHost = "0.0.0.0"
 
-	launcherImage       = "virt-launcher"
-	exporterImage       = "virt-exportserver"
-	launcherQemuTimeout = 240
+	launcherImage      = "virt-launcher"
+	exporterImage      = "virt-exportserver"
+	launcherVmmTimeout = 240
 
 	imagePullSecret = ""
 
@@ -217,7 +217,7 @@ type VirtControllerApp struct {
 
 	launcherImage              string
 	exporterImage              string
-	launcherQemuTimeout        int
+	launcherVmmTimeout         int
 	imagePullSecret            string
 	virtShareDir               string
 	virtLibDir                 string
@@ -584,7 +584,7 @@ func (vca *VirtControllerApp) initCommon() {
 		log.Log.Warningf("failed to create ephemeral disk dir: %v", err)
 	}
 	vca.templateService = services.NewTemplateService(vca.launcherImage,
-		vca.launcherQemuTimeout,
+		vca.launcherVmmTimeout,
 		vca.virtShareDir,
 		vca.virtLibDir,
 		vca.ephemeralDiskDir,
@@ -832,8 +832,8 @@ func (vca *VirtControllerApp) AddFlags() {
 	flag.StringVar(&vca.exporterImage, "exporter-image", exporterImage,
 		"Container for exporting VMs and VM images")
 
-	flag.IntVar(&vca.launcherQemuTimeout, "launcher-qemu-timeout", launcherQemuTimeout,
-		"Amount of time to wait for qemu")
+	flag.IntVar(&vca.launcherVmmTimeout, "launcher-vmm-timeout", launcherVmmTimeout,
+		"Amount of time to wait for the vmm")
 
 	flag.StringVar(&vca.imagePullSecret, "image-pull-secret", imagePullSecret,
 		"Secret to use for pulling virt-launcher and/or registry disks")

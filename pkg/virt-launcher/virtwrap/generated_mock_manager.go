@@ -286,13 +286,13 @@ func (_mr *_MockDomainManagerRecorder) MemoryDump(arg0, arg1 interface{}) *gomoc
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "MemoryDump", arg0, arg1)
 }
 
-func (_m *MockDomainManager) GetQemuVersion() (string, error) {
-	ret := _m.ctrl.Call(_m, "GetQemuVersion")
+func (_m *MockDomainManager) GetVmmVersion() (string, error) {
+	ret := _m.ctrl.Call(_m, "GetVmmVersion")
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-func (_mr *_MockDomainManagerRecorder) GetQemuVersion() *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "GetQemuVersion")
+func (_mr *_MockDomainManagerRecorder) GetVmmVersion() *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "GetVmmVersion")
 }

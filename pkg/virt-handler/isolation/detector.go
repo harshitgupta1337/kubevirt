@@ -113,7 +113,7 @@ func (s *socketBasedIsolationDetector) AdjustResources(vm *v1.VirtualMachineInst
 		return nil
 	}
 
-	// bump memlock ulimit for virtqemud
+	// bump memlock ulimit for the VMM daemon process (e.g., virtqemud or libvirtd)
 	res, err := s.Detect(vm)
 	if err != nil {
 		return err
@@ -131,8 +131,10 @@ func (s *socketBasedIsolationDetector) AdjustResources(vm *v1.VirtualMachineInst
 			continue
 		}
 
-		// virtqemud process sets the memory lock limit before fork/exec-ing into qemu
-		if process.Executable() != "virtqemud" {
+		// set the memory lock limit of the VMM daemon process
+		// before fork/exec-ing into the process (e.g., qemu-system-x86) for
+		// the given VMI
+		if process.Executable() != "virtqemud" || process.Executable() != "libvirtd" {
 			continue
 		}
 
@@ -152,10 +154,10 @@ func (s *socketBasedIsolationDetector) AdjustResources(vm *v1.VirtualMachineInst
 	return nil
 }
 
-// AdjustQemuProcessMemoryLimits adjusts QEMU process MEMLOCK rlimits that runs inside
+// AdjustVmmProcessMemoryLimits adjusts VMM process MEMLOCK rlimits that runs inside
 // virt-launcher pod on the given VMI according to its spec.
-// Only VMI's with VFIO devices (e.g: SRIOV, GPU), SEV or RealTime workloads require QEMU process MEMLOCK adjustment.
-func AdjustQemuProcessMemoryLimits(podIsoDetector PodIsolationDetector, vmi *v1.VirtualMachineInstance, additionalOverheadRatio *string) error {
+// Only VMI's with VFIO devices (e.g: SRIOV, GPU), SEV or RealTime workloads require VMM process MEMLOCK adjustment.
+func AdjustVmmProcessMemoryLimits(podIsoDetector PodIsolationDetector, vmi *v1.VirtualMachineInstance, additionalOverheadRatio *string) error {
 	if !util.IsVFIOVMI(vmi) && !vmi.IsRealtimeEnabled() && !util.IsSEVVMI(vmi) {
 		return nil
 	}
@@ -165,38 +167,38 @@ func AdjustQemuProcessMemoryLimits(podIsoDetector PodIsolationDetector, vmi *v1.
 		return err
 	}
 
-	qemuProcess, err := isolationResult.GetQEMUProcess()
+	vmmProcess, err := isolationResult.GetVmmProcess()
 	if err != nil {
 		return err
 	}
-	qemuProcessID := qemuProcess.Pid()
+	vmmProcessID := vmmProcess.Pid()
 	// make the best estimate for memory required by libvirt
 	memlockSize := services.GetMemoryOverhead(vmi, runtime.GOARCH, additionalOverheadRatio)
 	// Add base memory requested for the VM
 	vmiMemoryReq := vmi.Spec.Domain.Resources.Requests.Memory()
 	memlockSize.Add(*resource.NewScaledQuantity(vmiMemoryReq.ScaledValue(resource.Kilo), resource.Kilo))
 
-	if err := setProcessMemoryLockRLimit(qemuProcessID, memlockSize.Value()); err != nil {
-		return fmt.Errorf("failed to set process %d memlock rlimit to %d: %v", qemuProcessID, memlockSize.Value(), err)
+	if err := setProcessMemoryLockRLimit(vmmProcessID, memlockSize.Value()); err != nil {
+		return fmt.Errorf("failed to set process %d memlock rlimit to %d: %v", vmmProcessID, memlockSize.Value(), err)
 	}
 	log.Log.V(5).Object(vmi).Infof("set process %+v memlock rlimits to: Cur: %[2]d Max:%[2]d",
-		qemuProcess, memlockSize.Value())
+		vmmProcess, memlockSize.Value())
 
 	return nil
 }
 
-var qemuProcessExecutables = []string{"qemu-system", "qemu-kvm"}
+var vmmProcessExecutables = []string{"qemu-system", "qemu-kvm", "cloud-hypervisor", "cloud-hypervisor-static"}
 
-// findIsolatedQemuProcess Returns the first occurrence of the QEMU process whose parent is PID"
-func findIsolatedQemuProcess(processes []ps.Process, pid int) (ps.Process, error) {
+// findIsolatedVmmProcess Returns the first occurrence of the VMM process whose parent is PID"
+func findIsolatedVmmProcess(processes []ps.Process, pid int) (ps.Process, error) {
 	processes = childProcesses(processes, pid)
-	for _, exec := range qemuProcessExecutables {
-		if qemuProcess := lookupProcessByExecutable(processes, exec); qemuProcess != nil {
-			return qemuProcess, nil
+	for _, exec := range vmmProcessExecutables {
+		if vmmProcess := lookupProcessByExecutable(processes, exec); vmmProcess != nil {
+			return vmmProcess, nil
 		}
 	}
 
-	return nil, fmt.Errorf("no QEMU process found under process %d child processes", pid)
+	return nil, fmt.Errorf("no VMM process found under process %d child processes", pid)
 }
 
 // setProcessMemoryLockRLimit Adjusts process MEMLOCK

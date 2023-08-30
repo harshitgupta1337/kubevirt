@@ -110,17 +110,22 @@ func startCmdServer(socketPath string,
 	return done
 }
 
-func createLibvirtConnection(runWithNonRoot bool) virtcli.Connection {
-	libvirtUri := "qemu:///system"
+func createLibvirtConnection(runWithNonRoot bool, vmm string) virtcli.Connection {
+	libvirtUri := ""
 	user := ""
-	if runWithNonRoot {
-		user = putil.NonRootUserString
-		libvirtUri = "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"
+	if vmm == "qemu" {
+		libvirtUri = "qemu:///system"
+		if runWithNonRoot {
+			user = putil.NonRootUserString
+			libvirtUri = "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"
+		}
+	} else if vmm == "ch" {
+		libvirtUri = "ch:///system"
 	}
 
 	domainConn, err := virtcli.NewConnection(libvirtUri, user, "", 10*time.Second)
 	if err != nil {
-		panic(fmt.Sprintf("failed to connect to virtqemud: %v", err))
+		panic(fmt.Sprintf("failed to connect to libvirtUri %s: %v", libvirtUri, err))
 	}
 
 	return domainConn
@@ -326,7 +331,8 @@ func waitForFinalNotify(deleteNotificationSent chan watch.Event,
 }
 
 func main() {
-	qemuTimeout := pflag.Duration("qemu-timeout", defaultStartTimeout, "Amount of time to wait for qemu")
+	vmm := pflag.String("vmm", "qemu", "VMM to use for this VMI. Default: qemu")
+	qemuTimeout := pflag.Duration("vmm-timeout", defaultStartTimeout, "Amount of time to wait for the vmm")
 	virtShareDir := pflag.String("kubevirt-share-dir", "/var/run/kubevirt", "Shared directory between virt-handler and virt-launcher")
 	ephemeralDiskDir := pflag.String("ephemeral-disk-dir", "/var/run/kubevirt-ephemeral-disks", "Base directory for ephemeral disk data")
 	containerDiskDir := pflag.String("container-disk-dir", "/var/run/kubevirt/container-disks", "Base directory for container disk data")
@@ -388,19 +394,19 @@ func main() {
 	// Start virtqemud, virtlogd, and establish libvirt connection
 	stopChan := make(chan struct{})
 
-	l := util.NewLibvirtWrapper(*runWithNonRoot)
+	l := util.NewLibvirtWrapper(*runWithNonRoot, *vmm)
 	err = l.SetupLibvirt(libvirtLogFilters)
 	if err != nil {
 		panic(err)
 	}
 
-	l.StartVirtquemud(stopChan)
+	l.StartVmmDaemon(stopChan)
 	// only single domain should be present
 	domainName := api.VMINamespaceKeyFunc(vmi)
 
-	util.StartVirtlog(stopChan, domainName, *runWithNonRoot)
+	util.StartVirtlog(stopChan, domainName, *runWithNonRoot, *vmm)
 
-	domainConn := createLibvirtConnection(*runWithNonRoot)
+	domainConn := createLibvirtConnection(*runWithNonRoot, *vmm)
 	defer domainConn.Close()
 
 	var agentStore = agentpoller.NewAsyncAgentStore()
@@ -440,8 +446,10 @@ func main() {
 	}
 
 	events := make(chan watch.Event, 2)
-	// Send domain notifications to virt-handler
-	startDomainEventMonitoring(notifier, *virtShareDir, domainConn, events, vmi, domainName, &agentStore, *qemuAgentSysInterval, *qemuAgentFileInterval, *qemuAgentUserInterval, *qemuAgentVersionInterval, *qemuAgentFSFreezeStatusInterval, metadataCache)
+	// TODO Hermes. Commenting domain event monitoring because agent doesn't exist rn
+	// // Send domain notifications to virt-handler
+	startDomainEventMonitoring(notifier, *virtShareDir, domainConn, events, vmi, domainName, &agentStore, *qemuAgentSysInterval, *qemuAgentFileInterval, *qemuAgentUserInterval, *qemuAgentVersionInterval, *qemuAgentFSFreezeStatusInterval, metadataCache) // TODO QEMU Rename variables to VMM
+	fmt.Println(*qemuAgentSysInterval, *qemuAgentFileInterval, *qemuAgentUserInterval, *qemuAgentVersionInterval, *qemuAgentFSFreezeStatusInterval)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt,
@@ -466,10 +474,14 @@ func main() {
 	domain := waitForDomainUUID(*qemuTimeout, events, signalStopChan, domainManager)
 	if domain != nil {
 		var pidDir string
-		if *runWithNonRoot {
-			pidDir = "/run/libvirt/qemu/run"
-		} else {
-			pidDir = "/run/libvirt/qemu"
+		if *vmm == "qemu" {
+			if *runWithNonRoot {
+				pidDir = "/run/libvirt/qemu/run"
+			} else {
+				pidDir = "/run/libvirt/qemu"
+			}
+		} else if *vmm == "ch" {
+			pidDir = "/run/libvirt/ch"
 		}
 		mon := virtlauncher.NewProcessMonitor(domainName,
 			pidDir,

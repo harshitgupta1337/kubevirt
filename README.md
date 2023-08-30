@@ -15,6 +15,23 @@
 The aim is to provide a common ground for virtualization solutions on top of
 Kubernetes.
 
+## CloudHypervisor integration
+
+This section describes steps needed to build a KubeVirt distribution for CloudHypervisor integration task.
+### Building container images for KubeVirt components
+Presently, the images will be of the form `docker.io/harshitg/virt-{launcher,api,...}:mariner`
+`hack/build-mariner-based-images/build-images.sh`
+`hack/build-mariner-based-images/push-images.sh`
+
+### Generating manifest files for installing KubeVirt
+Since the KubeVirt components are currently of the form `docker.io/harshitg/virt-{launcher,api,...}:mariner`,
+we need to export the following values of variables.
+
+`export DOCKER_PREFIX=docker.io/harshitg; export DOCKER_TAG=mariner`
+`make manifests`
+
+TODO: We should use the `DOCKER_PREFIX` and `DOCKER_TAG` variables in the Mariner-based image generation and push scripts.
+
 ## Introduction
 
 ### Virtualization extension for Kubernetes

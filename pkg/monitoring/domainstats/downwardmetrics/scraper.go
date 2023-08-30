@@ -52,10 +52,10 @@ func (s *Scraper) Scrape(socketFile string, vmi *k6sv1.VirtualMachineInstance) {
 	}
 	defer cli.Close()
 
-	version, err := cli.GetQemuVersion()
+	version, err := cli.GetVmmVersion()
 	if err != nil {
 		if cmdclient.IsUnimplemented(err) {
-			log.Log.Reason(err).Warning("getQemuVersion not implemented, consider to upgrade kubevirt")
+			log.Log.Reason(err).Warning("getVmmVersion not implemented, consider to upgrade kubevirt")
 			version = qemuVersionUnknown
 		} else {
 			log.Log.Reason(err).Errorf("failed to update qemu stats from socket %s", socketFile)

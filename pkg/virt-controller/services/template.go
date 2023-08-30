@@ -66,6 +66,7 @@ const (
 	virtExporter     = "virt-exporter"
 )
 
+const MshvDevice = "devices.kubevirt.io/mshv"
 const KvmDevice = "devices.kubevirt.io/kvm"
 const TunDevice = "devices.kubevirt.io/tun"
 const VhostNetDevice = "devices.kubevirt.io/vhost-net"
@@ -79,7 +80,7 @@ const virtiofsDebugLogs = "virtiofsdDebugLogs"
 
 const MultusNetworksAnnotation = "k8s.v1.cni.cncf.io/networks"
 
-const qemuTimeoutJitterRange = 120
+const vmmTimeoutJitterRange = 120 // TODO Find the value for CH. How to generalize ?
 
 const (
 	CAP_NET_BIND_SERVICE = "NET_BIND_SERVICE"
@@ -124,8 +125,8 @@ const (
 	VirtLauncherMonitorOverhead = "25Mi"  // The `ps` RSS for virt-launcher-monitor
 	VirtLauncherOverhead        = "100Mi" // The `ps` RSS for the virt-launcher process
 	VirtlogdOverhead            = "20Mi"  // The `ps` RSS for virtlogd
-	VirtqemudOverhead           = "35Mi"  // The `ps` RSS for virtqemud
-	QemuOverhead                = "30Mi"  // The `ps` RSS for qemu, minus the RAM of its (stressed) guest, minus the virtual page table
+	VmmDaemonOverhead           = "35Mi"  // The `ps` RSS for VMM daemon // TODO QEMU. What is equivalent overhead for CH ??
+	VmmOverhead                 = "30Mi"  // The `ps` RSS for VMM, minus the RAM of its (stressed) guest, minus the virtual page table // # TODO QEMU. What is the equivalent overhead for CH ?? How to provide different values for different VMMs?
 )
 
 const customSELinuxType = "virt_launcher.process"
@@ -145,7 +146,7 @@ type TemplateService interface {
 type templateService struct {
 	launcherImage              string
 	exporterImage              string
-	launcherQemuTimeout        int
+	launcherVmmTimeout         int // TODO Find the value for CH. How to generalize ?
 	virtShareDir               string
 	virtLibDir                 string
 	ephemeralDiskDir           string
@@ -278,8 +279,8 @@ func (t *templateService) IsARM64() bool {
 	return t.clusterConfig.GetClusterCPUArch() == "arm64"
 }
 
-func generateQemuTimeoutWithJitter(qemuTimeoutBaseSeconds int) string {
-	timeout := rand.Intn(qemuTimeoutJitterRange) + qemuTimeoutBaseSeconds
+func generateVmmTimeoutWithJitter(vmmTimeoutBaseSeconds int) string {
+	timeout := rand.Intn(vmmTimeoutJitterRange) + vmmTimeoutBaseSeconds
 
 	return fmt.Sprintf("%ds", timeout)
 }
@@ -353,8 +354,11 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 			"-c",
 			"echo", "bound PVCs"}
 	} else {
+		logger := log.DefaultLogger()
+		logger.Infof("nonRoot = %v", nonRoot)
 		command = []string{"/usr/bin/virt-launcher-monitor",
-			"--qemu-timeout", generateQemuTimeoutWithJitter(t.launcherQemuTimeout),
+			"--vmm", vmi.Spec.Vmm,
+			"--vmm-timeout", generateVmmTimeoutWithJitter(t.launcherVmmTimeout),
 			"--name", domain,
 			"--uid", string(vmi.UID),
 			"--namespace", namespace,
@@ -656,7 +660,7 @@ func (t *templateService) newContainerSpecRenderer(vmi *v1.VirtualMachineInstanc
 		computeContainerOpts = append(computeContainerOpts, WithNonRoot(userId))
 		computeContainerOpts = append(computeContainerOpts, WithDropALLCapabilities())
 	}
-	if t.IsPPC64() {
+	if t.IsPPC64() || vmi.Spec.Vmm == "ch" { // Setting virt-launcher container to privileged to run VMs.
 		computeContainerOpts = append(computeContainerOpts, WithPrivileged())
 	}
 	if vmi.Spec.ReadinessProbe != nil {
@@ -1103,7 +1107,7 @@ func getNamespaceAndNetworkName(vmi *v1.VirtualMachineInstance, fullNetworkName 
 }
 
 func NewTemplateService(launcherImage string,
-	launcherQemuTimeout int,
+	launcherVmmTimeout int,
 	virtShareDir string,
 	virtLibDir string,
 	ephemeralDiskDir string,
@@ -1117,10 +1121,10 @@ func NewTemplateService(launcherImage string,
 	exporterImage string) TemplateService {
 
 	precond.MustNotBeEmpty(launcherImage)
-	log.Log.V(1).Infof("Exporter Image: %s", exporterImage)
+	log.Log.V(1).Infof("Generalized VMM Code. Exporter Image: %s", exporterImage) // TODO Undo changes to this line
 	svc := templateService{
 		launcherImage:              launcherImage,
-		launcherQemuTimeout:        launcherQemuTimeout,
+		launcherVmmTimeout:         launcherVmmTimeout,
 		virtShareDir:               virtShareDir,
 		virtLibDir:                 virtLibDir,
 		ephemeralDiskDir:           ephemeralDiskDir,

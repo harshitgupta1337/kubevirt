@@ -160,13 +160,13 @@ func (n *NodeLabeller) loadAll() error {
 	err = n.loadHostSupportedFeatures()
 	if err != nil {
 		n.logger.Errorf("node-labeller could not load supported features: " + err.Error())
-		return err
+		//return err TODO MSHV Hermes https://dev.azure.com/mariner-org/ECF/_queries/edit/4984/?triage=true
 	}
 
 	err = n.loadDomCapabilities()
 	if err != nil {
 		n.logger.Errorf("node-labeller could not load host dom capabilities: " + err.Error())
-		return err
+		//return err TODO MSHV Hermes https://dev.azure.com/mariner-org/ECF/_queries/edit/4984/?triage=true
 	}
 
 	err = n.loadHostCapabilities()
@@ -392,7 +392,7 @@ func (n *NodeLabeller) shouldAddCPUModelLabel(
 	// particular CPU model differs from hypervisor's definition.
 	// E.g. currently Opteron_G2 requires svm by libvirt:
 	//     /usr/share/libvirt/cpu_map/x86_Opteron_G2.xml
-	// But libvirt marks it as Usable:yes even without svm because it is usable by qemu:
+	// But libvirt marks it as Usable:yes even without svm because it is usable by qemu: // TODO QEMU
 	//     /var/lib/kubevirt-node-labeller/virsh_domcapabilities.xml
 	// For more information refer to https://wiki.qemu.org/Features/CPUModels, "Getting
 	// information about CPU models" section.

@@ -1,0 +1,79 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  labels:
+    kubevirt.io/vm: kubevirt-ch-vm
+  name: kubevirt-ch-vm
+spec:
+  running: true
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: kubevirt-ch-vm
+    spec:
+      vmm: ch
+      domain:
+        firmware:
+          kernelBoot:
+            container:
+              image: harshitg/hypervisor-fw:mariner
+              kernelPath: /boot/hypervisor-fw
+              imagePullPolicy: Always
+        devices:
+          autoattachGraphicsDevice: false
+          autoattachMemBalloon: false
+          disks:
+          - disk:
+              bus: virtio
+            name: rootfs 
+          - disk:
+              bus: virtio
+            name: cloudinit
+        cpu:
+          cores: 2
+        resources:
+          requests:
+            memory: 1024Mi
+      terminationGracePeriodSeconds: 0
+      volumes:
+      - dataVolume:
+          name: ch-test-dv
+        name: rootfs
+      - dataVolume:
+          name: ch-cloudinit-dv
+        name: cloudinit
+  dataVolumeTemplates:
+  - apiVersion: cdi.kubevirt.io/v1beta1
+    kind: DataVolume
+    metadata:
+      name: ch-test-dv
+      labels:
+        name: ch-test-dv
+    spec:
+      source:
+        registry:
+          url: "docker://docker.io/harshitg/ch-test-disk:mariner"
+      pvc:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: "local-path"
+  - apiVersion: cdi.kubevirt.io/v1beta1
+    kind: DataVolume
+    metadata:
+      name: ch-cloudinit-dv
+      labels:
+        name: ch-cloudinit-dv
+    spec:
+      source:
+        registry:
+          url: "docker://docker.io/harshitg/ch-cloudinit-disk:mariner"
+      pvc:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 500Mi
+        storageClassName: "local-path"

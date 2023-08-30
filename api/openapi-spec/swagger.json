@@ -19385,6 +19385,10 @@
       "x-kubernetes-patch-merge-key": "topologyKey",
       "x-kubernetes-patch-strategy": "merge"
      },
+     "vmm": {
+      "description": "The VMM to use for the VMI. Possible values are \"qemu\" for QEMU and \"ch\" for Cloud Hypervisor.",
+      "type": "string"
+     },
      "volumes": {
       "description": "List of volumes that can be mounted by disks belonging to the vmi.",
       "type": "array",

@@ -1,0 +1,25 @@
+<domain type='kvm'>
+  <name>clh_dom0_test</name>
+  <title>Mariner 2.0 on Linux Dom0</title>
+  <memory unit='G'>1</memory>
+  <os>
+    <type>hvm</type>
+    <kernel>/hypervisor-fw</kernel>
+  </os>
+  <devices>
+    <disk type='file'>
+      <source file='/focal-server-cloudimg-amd64.raw'/>
+      <driver if='virtio' type='raw' queues='4'/>
+      <target dev='vda'/>
+    </disk>
+    <disk type='file'>
+      <source file='/ubuntu-cloudinit.img'/>
+      <driver if='virtio' queues='4'/>
+      <target dev='vdb'/>
+    </disk>
+    <serial>
+      <target port='0'/>
+    </serial>
+  </devices>
+  <vcpu>2</vcpu>
+</domain>

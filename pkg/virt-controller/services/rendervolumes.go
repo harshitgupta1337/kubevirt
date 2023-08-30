@@ -376,7 +376,8 @@ func withHugepages() VolumeRendererOption {
 		})
 		renderer.podVolumeMounts = append(renderer.podVolumeMounts, k8sv1.VolumeMount{
 			Name:      "hugetblfs-dir",
-			MountPath: filepath.Join(hugepagesBasePath, "libvirt/qemu"),
+			MountPath: filepath.Join(hugepagesBasePath, "libvirt/qemu"), // TODO Fix Hugepages dependency on QEMU
+			// TODO Probably it is ok if we don't use Hugepages for now
 		})
 		return nil
 	}

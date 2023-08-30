@@ -275,7 +275,7 @@ func copyResources(srcResources, dstResources k8sv1.ResourceList) {
 // GetMemoryOverhead computes the estimation of total
 // memory needed for the domain to operate properly.
 // This includes the memory needed for the guest and memory
-// for Qemu and OS overhead.
+// for Vmm and OS overhead.
 // The return value is overhead memory quantity
 //
 // Note: This is the best estimation we were able to come up with
@@ -298,8 +298,8 @@ func GetMemoryOverhead(vmi *v1.VirtualMachineInstance, cpuArch string, additiona
 	overhead.Add(resource.MustParse(VirtLauncherMonitorOverhead))
 	overhead.Add(resource.MustParse(VirtLauncherOverhead))
 	overhead.Add(resource.MustParse(VirtlogdOverhead))
-	overhead.Add(resource.MustParse(VirtqemudOverhead))
-	overhead.Add(resource.MustParse(QemuOverhead))
+	overhead.Add(resource.MustParse(VmmDaemonOverhead))
+	overhead.Add(resource.MustParse(VmmOverhead))
 
 	// Add CPU table overhead (8 MiB per vCPU and 8 MiB per IO thread)
 	// overhead per vcpu in MiB
@@ -335,9 +335,9 @@ func GetMemoryOverhead(vmi *v1.VirtualMachineInstance, cpuArch string, additiona
 		overhead.Add(resource.MustParse("16Mi"))
 	}
 
-	// When use uefi boot on aarch64 with edk2 package, qemu will create 2 pflash(64Mi each, 128Mi in total)
+	// When use uefi boot on aarch64 with edk2 package, qemu will create 2 pflash(64Mi each, 128Mi in total) // TODO QEMU
 	// it should be considered for memory overhead
-	// Additional information can be found here: https://github.com/qemu/qemu/blob/master/hw/arm/virt.c#L120
+	// Additional information can be found here: https://github.com/qemu/qemu/blob/master/hw/arm/virt.c#L120 // TODO QEMU
 	if cpuArch == "arm64" {
 		overhead.Add(resource.MustParse("128Mi"))
 	}
@@ -449,11 +449,15 @@ func getRequiredResources(vmi *v1.VirtualMachineInstance, allowEmulation bool) k
 		// Note that about network interface, allowEmulation does not make
 		// any difference on eventual Domain xml, but uniformly making
 		// /dev/vhost-net unavailable and libvirt implicitly fallback
-		// to use QEMU userland NIC emulation.
+		// to use QEMU userland NIC emulation. // TODO QEMU
 		res[VhostNetDevice] = resource.MustParse("1")
 	}
 	if !allowEmulation {
-		res[KvmDevice] = resource.MustParse("1")
+		if vmi.Spec.Vmm == "ch" {
+			//res[MshvDevice] = resource.MustParse("1") // TODO Hermes KVM/MSHV. Node isn't being labeled with MSHV. Once the problem is fixed, uncomment this line to enable virt-launcher pod requesting MSHV Device. Bug to track https://dev.azure.com/mariner-org/ECF/_queries/edit/4984/?triage=true
+		} else {
+			res[KvmDevice] = resource.MustParse("1")
+		}
 	}
 	if util.IsAutoAttachVSOCK(vmi) {
 		res[VhostVsockDevice] = resource.MustParse("1")

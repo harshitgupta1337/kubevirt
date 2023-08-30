@@ -416,12 +416,12 @@ func (l *Launcher) GetDomain(_ context.Context, _ *cmdv1.EmptyRequest) (*cmdv1.D
 	return response, nil
 }
 
-func (l *Launcher) GetQemuVersion(_ context.Context, _ *cmdv1.EmptyRequest) (*cmdv1.QemuVersionResponse, error) {
-	response := &cmdv1.QemuVersionResponse{
+func (l *Launcher) GetVmmVersion(_ context.Context, _ *cmdv1.EmptyRequest) (*cmdv1.VmmVersionResponse, error) {
+	response := &cmdv1.VmmVersionResponse{
 		Response: &cmdv1.Response{},
 	}
 
-	if version, err := l.domainManager.GetQemuVersion(); err != nil {
+	if version, err := l.domainManager.GetVmmVersion(); err != nil { // TODO QEMU
 		response.Response.Message = getErrorMessage(err)
 	} else {
 		response.Response.Success = true

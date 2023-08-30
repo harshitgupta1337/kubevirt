@@ -4019,8 +4019,8 @@ func validateAndExtractQemuTimeoutArg(args []string) string {
 	failMsg := ""
 	if timeoutInt < qemuTimeoutBaseSeconds {
 		failMsg = fmt.Sprintf("randomized qemu timeout [%d] is less that base range [%d]", timeoutInt, qemuTimeoutBaseSeconds)
-	} else if timeoutInt > qemuTimeoutBaseSeconds+qemuTimeoutJitterRange {
-		failMsg = fmt.Sprintf("randomized qemu timeout [%d] is greater than max range [%d]", timeoutInt, qemuTimeoutBaseSeconds+qemuTimeoutJitterRange)
+	} else if timeoutInt > qemuTimeoutBaseSeconds+vmmTimeoutJitterRange {
+		failMsg = fmt.Sprintf("randomized qemu timeout [%d] is greater than max range [%d]", timeoutInt, qemuTimeoutBaseSeconds+vmmTimeoutJitterRange)
 
 	}
 	Expect(failMsg).To(Equal(""))
