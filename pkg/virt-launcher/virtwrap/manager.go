@@ -45,6 +45,7 @@ import (
 
 	"k8s.io/utils/pointer"
 
+	"kubevirt.io/kubevirt/pkg/hypervisor"
 	"kubevirt.io/kubevirt/pkg/liveupdate/memory"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device/hostdevice/generic"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device/hostdevice/gpu"
@@ -672,7 +673,7 @@ func (l *LibvirtDomainManager) generateSomeCloudInitISO(vmi *v1.VirtualMachineIn
 		}
 		var err error
 		if size != 0 {
-			err = cloudinit.GenerateEmptyIso(vmi.Name, vmi.Namespace, cloudInitDataStore, size)
+			err = cloudinit.GenerateEmptyIso(vmi.Name, vmi.Namespace, cloudInitDataStore, size, hypervisor.NewHypervisor(vmi.Spec.Hypervisor))
 		} else {
 			// ClusterInstancetype will take precedence over a namespaced Instancetype
 			// for setting instance_type in the metadata
@@ -1001,6 +1002,7 @@ func (l *LibvirtDomainManager) generateConverterContext(vmi *v1.VirtualMachineIn
 		UseLaunchSecurity:     kutil.IsSEVVMI(vmi),
 		FreePageReporting:     isFreePageReportingEnabled(false, vmi),
 		SerialConsoleLog:      isSerialConsoleLogEnabled(false, vmi),
+		Hypervisor:            hypervisor.NewHypervisor(vmi.Spec.Hypervisor),
 	}
 
 	if options != nil {
@@ -2022,7 +2024,18 @@ func (l *LibvirtDomainManager) buildDevicesMetadata(vmi *v1.VirtualMachineInstan
 	devices := domainSpec.Devices
 	interfaces := devices.Interfaces
 	for _, nic := range interfaces {
-		if data, exist := taggedInterfaces[nic.Alias.GetName()]; exist {
+
+		// Remove leading + signs from below lines
+		var ifaceAlias string
+		if nic.Alias == nil {
+			// TODO Hermes Alias is not being persisted in Domain XML
+			// Bug to track https://dev.azure.com/mariner-org/ECF/_queries/edit/4785/?triage=true
+			ifaceAlias = "default"
+		} else {
+			ifaceAlias = nic.Alias.GetName()
+		}
+
+		if data, exist := taggedInterfaces[ifaceAlias]; exist {
 			var mac string
 			if nic.MAC != nil {
 				mac = nic.MAC.MAC
@@ -2317,7 +2330,7 @@ func getDomainCreateFlags(vmi *v1.VirtualMachineInstance) libvirt.DomainCreateFl
 		flags |= libvirt.DOMAIN_START_PAUSED
 	}
 	if vmi.IsCPUDedicated() && vmi.Spec.Domain.CPU.IsolateEmulatorThread {
-		flags |= libvirt.DOMAIN_START_PAUSED
+		flags |= libvirt.DOMAIN_START_PAUSED // TODO MSHV Check whether this needs to be commented out
 	}
 	return flags
 }
