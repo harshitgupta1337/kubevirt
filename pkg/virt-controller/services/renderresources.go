@@ -14,6 +14,7 @@ import (
 	v1 "kubevirt.io/api/core/v1"
 
 	"kubevirt.io/kubevirt/pkg/downwardmetrics"
+	"kubevirt.io/kubevirt/pkg/hypervisor"
 	"kubevirt.io/kubevirt/pkg/util"
 	"kubevirt.io/kubevirt/pkg/util/hardware"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
@@ -311,14 +312,16 @@ func GetMemoryOverhead(vmi *v1.VirtualMachineInstance, cpuArch string, additiona
 	pagetableMemory.Set(pagetableMemory.Value() / 512)
 	overhead.Add(*pagetableMemory)
 
+	hypervisor := hypervisor.NewHypervisor(vmi.Spec.Hypervisor)
+
 	// Add fixed overhead for KubeVirt components, as seen in a random run, rounded up to the nearest MiB
 	// Note: shared libraries are included in the size, so every library is counted (wrongly) as many times as there are
 	//   processes using it. However, the extra memory is only in the order of 10MiB and makes for a nice safety margin.
-	overhead.Add(resource.MustParse(VirtLauncherMonitorOverhead))
-	overhead.Add(resource.MustParse(VirtLauncherOverhead))
-	overhead.Add(resource.MustParse(VirtlogdOverhead))
-	overhead.Add(resource.MustParse(VirtqemudOverhead))
-	overhead.Add(resource.MustParse(QemuOverhead))
+	overhead.Add(resource.MustParse(hypervisor.GetVirtLauncherMonitorOverhead()))
+	overhead.Add(resource.MustParse(hypervisor.GetVirtLauncherOverhead()))
+	overhead.Add(resource.MustParse(hypervisor.GetVirtlogdOverhead()))
+	overhead.Add(resource.MustParse(hypervisor.GetHypervisorDaemonOverhead()))
+	overhead.Add(resource.MustParse(hypervisor.GetHypervisorOverhead()))
 
 	// Add CPU table overhead (8 MiB per vCPU and 8 MiB per IO thread)
 	// overhead per vcpu in MiB
@@ -468,7 +471,13 @@ func getRequiredResources(vmi *v1.VirtualMachineInstance, allowEmulation bool) k
 		res[VhostNetDevice] = resource.MustParse("1")
 	}
 	if !allowEmulation {
-		res[KvmDevice] = resource.MustParse("1")
+		// TODO Remove this if condition
+		if vmi.Spec.Hypervisor == "qemu" {
+			// TODO Hermes KVM/MSHV. Node isn't being labeled with MSHV. Once the problem is fixed, uncomment this line to enable virt-launcher pod requesting MSHV Device. Bug to track https://dev.azure.com/mariner-org/ECF/_queries/edit/4984/?triage=true
+			hypervisor := hypervisor.NewHypervisor(vmi.Spec.Hypervisor)
+			hypervisorDevice := k8sv1.ResourceName(hypervisor.GetHypervisorDevice())
+			res[hypervisorDevice] = resource.MustParse("1")
+		}
 	}
 	if util.IsAutoAttachVSOCK(vmi) {
 		res[VhostVsockDevice] = resource.MustParse("1")
