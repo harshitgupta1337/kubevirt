@@ -49,6 +49,7 @@ import (
 	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 
 	kubevirt_hooks_v1alpha2 "kubevirt.io/kubevirt/pkg/hooks/v1alpha2"
+	"kubevirt.io/kubevirt/pkg/hypervisor"
 	"kubevirt.io/kubevirt/pkg/libvmi"
 	libvmici "kubevirt.io/kubevirt/pkg/libvmi/cloudinit"
 	"kubevirt.io/kubevirt/pkg/pointer"
@@ -249,6 +250,7 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 		)
 
 		DescribeTable("with memory configuration", func(vmiOptions []libvmi.Option, expectedGuestMemory int) {
+			vmiOptions = append(vmiOptions, libvmi.WithHypervisor("ch"))
 			vmi := libvmi.New(vmiOptions...)
 
 			By("Starting a VirtualMachineInstance")
@@ -537,7 +539,7 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 
 		Context("[rfe_id:140][crit:medium][vendor:cnv-qe@redhat.com][level:component]with no memory requested", func() {
 			It("[test_id:3113]should failed to the VMI creation", func() {
-				vmi := libvmi.New()
+				vmi := libvmi.New(libvmi.WithHypervisor("ch"))
 				By("Starting a VirtualMachineInstance")
 				_, err := virtClient.VirtualMachineInstance(testsuite.GetTestNamespace(vmi)).Create(context.Background(), vmi, metav1.CreateOptions{})
 				Expect(err).To(HaveOccurred())
@@ -554,7 +556,7 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 			})
 
 			It("[test_id:3114]should set requested amount of memory according to the specified virtual memory", func() {
-				vmi := libvmi.New()
+				vmi := libvmi.New(libvmi.WithHypervisor("ch"))
 				guestMemory := resource.MustParse("4096M")
 				vmi.Spec.Domain.Memory = &v1.Memory{Guest: &guestMemory}
 				vmi.Spec.Domain.Resources = v1.ResourceRequirements{}
@@ -570,6 +572,7 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 				vmi := libvmi.New(
 					libvmi.WithNetwork(v1.DefaultPodNetwork()),
 					libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding()),
+					libvmi.WithHypervisor("ch"),
 				)
 				vmi.Spec.Domain.Resources = v1.ResourceRequirements{
 					Requests: k8sv1.ResourceList{
@@ -610,6 +613,7 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 					libvmi.WithNetwork(v1.DefaultPodNetwork()),
 					libvmi.WithInterface(interfaceDeviceWithMasqueradeBinding),
 					withSerialBIOS(),
+					libvmi.WithHypervisor("ch"),
 				)
 
 				By("Starting a VirtualMachineInstance")
@@ -1693,10 +1697,12 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 				origVmiWithoutHeadroom := libvmi.New(
 					libvmi.WithResourceMemory(guestMemoryStr),
 					libvmi.WithGuestMemory(guestMemoryStr),
+					libvmi.WithHypervisor("ch"),
 				)
 				origVmiWithHeadroom := libvmi.New(
 					libvmi.WithResourceMemory(guestMemoryStr),
 					libvmi.WithGuestMemory(guestMemoryStr),
+					libvmi.WithHypervisor("ch"),
 				)
 
 				By("Running a vmi without additional headroom")
@@ -1884,6 +1890,7 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 			vmi := libvmi.New(
 				libvmi.WithResourceMemory(enoughMemForSafeBiosEmulation),
 				withMachineType("pc"),
+				libvmi.WithHypervisor("ch"),
 			)
 			vmi = libvmops.RunVMIAndExpectLaunch(vmi, 30)
 			runningVMISpec, err := tests.GetRunningVMIDomainSpec(vmi)
@@ -1910,6 +1917,7 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 			vmi := libvmi.New(
 				libvmi.WithResourceMemory(enoughMemForSafeBiosEmulation),
 				withMachineType(""),
+				libvmi.WithHypervisor("ch"),
 			)
 
 			vmi = libvmops.RunVMIAndExpectLaunch(vmi, 30)
@@ -1948,6 +1956,7 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 			vmi := libvmi.New(
 				libvmi.WithResourceMemory(enoughMemForSafeBiosEmulation),
 				WithSchedulerName("my-custom-scheduler"),
+				libvmi.WithHypervisor("ch"),
 			)
 			runningVMI := libvmops.RunVMIAndExpectScheduling(vmi, 30)
 			launcherPod, err := libpod.GetPodByVirtualMachineInstance(runningVMI, testsuite.GetTestNamespace(vmi))
@@ -1962,6 +1971,7 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 			vmi := libvmi.New(
 				libvmi.WithResourceMemory(enoughMemForSafeBiosEmulation),
 				libvmi.WithResourceCPU("500m"),
+				libvmi.WithHypervisor("ch"),
 			)
 			runningVMI := libvmops.RunVMIAndExpectScheduling(vmi, 30)
 
@@ -2170,6 +2180,7 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 				libvmi.WithHostDisk("hostdisk", filepath.Join(tmpHostDiskDir, "test-disk.img"), v1.HostDiskExistsOrCreate),
 				// hostdisk needs a privileged namespace
 				libvmi.WithNamespace(testsuite.NamespacePrivileged),
+				libvmi.WithHypervisor("ch"),
 			)
 
 			By("setting disk caches")
@@ -2236,6 +2247,7 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 				libvmi.WithPersistentVolumeClaim("hostpath-pvc", tests.DiskAlpineHostPath),
 				// disk[3]
 				libvmi.WithContainerDisk("ephemeral-disk2", cd.ContainerDiskFor(cd.ContainerDiskCirros)),
+				libvmi.WithHypervisor("ch"),
 			)
 			// disk[0]:  File, sparsed, no user-input, cache=none
 			vmi.Spec.Domain.Devices.Disks[0].Cache = v1.CacheNone
@@ -2307,6 +2319,7 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 				libvmi.WithNetwork(v1.DefaultPodNetwork()),
 				libvmi.WithPersistentVolumeClaim("disk0", dataVolume.Name),
 				libvmi.WithResourceMemory("128Mi"),
+				libvmi.WithHypervisor("ch"),
 			)
 
 			By("setting the disk to use custom block sizes")
@@ -2358,6 +2371,7 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 				libvmi.WithNetwork(v1.DefaultPodNetwork()),
 				libvmi.WithPersistentVolumeClaim("disk0", dataVolume.Name),
 				libvmi.WithResourceMemory("128Mi"),
+				libvmi.WithHypervisor("ch"),
 			)
 
 			By("setting the disk to match the volume block sizes")
@@ -2412,6 +2426,7 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 				libvmi.WithNodeAffinityFor(nodeName),
 				// hostdisk needs a privileged namespace
 				libvmi.WithNamespace(testsuite.NamespacePrivileged),
+				libvmi.WithHypervisor("ch"),
 			)
 
 			By("setting the disk to match the volume block sizes")
@@ -3328,12 +3343,14 @@ var _ = Describe("[sig-compute]Configurations", decorators.SigCompute, func() {
 				Expect(processRss).To(HaveKey(process), "no %s process found", process)
 			}
 
+			hypervisor := hypervisor.NewHypervisor("qemu")
+
 			By("Ensuring no process is using too much ram")
-			doesntExceedMemoryUsage(&processRss, "virt-launcher-monitor", resource.MustParse(services.VirtLauncherMonitorOverhead))
-			doesntExceedMemoryUsage(&processRss, "virt-launcher", resource.MustParse(services.VirtLauncherOverhead))
-			doesntExceedMemoryUsage(&processRss, "virtlogd", resource.MustParse(services.VirtlogdOverhead))
-			doesntExceedMemoryUsage(&processRss, "virtqemud", resource.MustParse(services.VirtqemudOverhead))
-			qemuExpected := resource.MustParse(services.QemuOverhead)
+			doesntExceedMemoryUsage(&processRss, "virt-launcher-monitor", resource.MustParse(hypervisor.GetVirtLauncherMonitorOverhead()))
+			doesntExceedMemoryUsage(&processRss, "virt-launcher", resource.MustParse(hypervisor.GetVirtLauncherOverhead()))
+			doesntExceedMemoryUsage(&processRss, "virtlogd", resource.MustParse(hypervisor.GetVirtlogdOverhead()))
+			doesntExceedMemoryUsage(&processRss, "virtqemud", resource.MustParse(hypervisor.GetHypervisorDaemonOverhead()))
+			qemuExpected := resource.MustParse(hypervisor.GetHypervisorOverhead())
 			qemuExpected.Add(vmi.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory])
 			doesntExceedMemoryUsage(&processRss, "qemu", qemuExpected)
 		})

@@ -47,6 +47,7 @@ import (
 
 	"kubevirt.io/kubevirt/pkg/apimachinery/patch"
 	"kubevirt.io/kubevirt/pkg/controller"
+	"kubevirt.io/kubevirt/pkg/hypervisor"
 	"kubevirt.io/kubevirt/pkg/libvmi"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 	"kubevirt.io/kubevirt/pkg/virt-controller/services"
@@ -220,7 +221,7 @@ var _ = Describe("[rfe_id:273][crit:high][arm64][vendor:cnv-qe@redhat.com][level
 		})
 
 		DescribeTable("log libvirtd debug logs should be", func(vmiLabels, vmiAnnotations map[string]string, expectDebugLogs bool) {
-			options := []libvmi.Option{libvmi.WithResourceMemory("32Mi")}
+			options := []libvmi.Option{libvmi.WithResourceMemory("32Mi"), libvmi.WithHypervisor("ch")}
 			for k, v := range vmiLabels {
 				options = append(options, libvmi.WithLabel(k, v))
 			}
@@ -1225,6 +1226,7 @@ var _ = Describe("[rfe_id:273][crit:high][arm64][vendor:cnv-qe@redhat.com][level
 				By("Creating a VirtualMachineInstance with different namespace")
 				vmi = libvmi.New(
 					libvmi.WithResourceMemory("1Mi"),
+					libvmi.WithHypervisor("ch"),
 					libvmi.WithNetwork(v1.DefaultPodNetwork()),
 					libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding()),
 				)
@@ -1298,6 +1300,9 @@ var _ = Describe("[rfe_id:273][crit:high][arm64][vendor:cnv-qe@redhat.com][level
 					Skip("Software emulation is not enabled on this cluster")
 				}
 			})
+
+			hypervisor := hypervisor.NewHypervisor("qemu")
+			kvmDevice := k8sv1.ResourceName(hypervisor.GetHypervisorDevice())
 
 			It("[test_id:1643]should enable emulation in virt-launcher", func() {
 				vmi, err := kubevirt.Client().VirtualMachineInstance(testsuite.GetTestNamespace(vmi)).Create(context.Background(), vmi, metav1.CreateOptions{})
@@ -1385,7 +1390,7 @@ var _ = Describe("[rfe_id:273][crit:high][arm64][vendor:cnv-qe@redhat.com][level
 					if container.Name == "compute" {
 						computeContainerFound = true
 
-						_, ok := container.Resources.Limits[services.KvmDevice]
+						_, ok := container.Resources.Limits[kvmDevice]
 						Expect(ok).To(BeFalse(), "Container should not have requested KVM device")
 
 						_, ok = container.Resources.Limits[services.TunDevice]
@@ -1409,6 +1414,9 @@ var _ = Describe("[rfe_id:273][crit:high][arm64][vendor:cnv-qe@redhat.com][level
 				}
 			})
 
+			hypervisor := hypervisor.NewHypervisor("qemu")
+			kvmDevice := k8sv1.ResourceName(hypervisor.GetHypervisorDevice())
+
 			It("[test_id:1646]should request a KVM and TUN device", func() {
 				vmi = libvmops.RunVMIAndExpectLaunch(libvmifact.NewAlpine(), startupTimeout)
 				pod, err := libpod.GetPodByVirtualMachineInstance(vmi, vmi.Namespace)
@@ -1419,7 +1427,7 @@ var _ = Describe("[rfe_id:273][crit:high][arm64][vendor:cnv-qe@redhat.com][level
 					if container.Name == "compute" {
 						computeContainerFound = true
 
-						_, ok := container.Resources.Limits[services.KvmDevice]
+						_, ok := container.Resources.Limits[kvmDevice]
 						Expect(ok).To(BeTrue(), "Container should have requested KVM device")
 
 						_, ok = container.Resources.Limits[services.TunDevice]
@@ -1461,10 +1469,10 @@ var _ = Describe("[rfe_id:273][crit:high][arm64][vendor:cnv-qe@redhat.com][level
 				}
 				node := nodeList.Items[0]
 
-				_, ok := node.Status.Allocatable[services.KvmDevice]
+				_, ok := node.Status.Allocatable[kvmDevice]
 				Expect(ok).To(BeTrue(), "KVM devices not allocatable on node: %s", node.Name)
 
-				_, ok = node.Status.Capacity[services.KvmDevice]
+				_, ok = node.Status.Capacity[kvmDevice]
 				Expect(ok).To(BeTrue(), "No Capacity for KVM devices on node: %s", node.Name)
 			})
 		})

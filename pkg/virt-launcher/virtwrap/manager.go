@@ -45,6 +45,7 @@ import (
 
 	"k8s.io/utils/pointer"
 
+	"kubevirt.io/kubevirt/pkg/hypervisor"
 	"kubevirt.io/kubevirt/pkg/liveupdate/memory"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device/hostdevice/generic"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device/hostdevice/gpu"
@@ -670,6 +671,7 @@ func (l *LibvirtDomainManager) generateSomeCloudInitISO(vmi *v1.VirtualMachineIn
 		if devicesMetadata != nil {
 			cloudInitDataStore.DevicesData = &devicesMetadata
 		}
+
 		var err error
 		if size != 0 {
 			err = cloudinit.GenerateEmptyIso(vmi.Name, vmi.Namespace, cloudInitDataStore, size)
@@ -1001,6 +1003,7 @@ func (l *LibvirtDomainManager) generateConverterContext(vmi *v1.VirtualMachineIn
 		UseLaunchSecurity:     kutil.IsSEVVMI(vmi),
 		FreePageReporting:     isFreePageReportingEnabled(false, vmi),
 		SerialConsoleLog:      isSerialConsoleLogEnabled(false, vmi),
+		Hypervisor:            hypervisor.NewHypervisor(vmi.Spec.Hypervisor),
 	}
 
 	if options != nil {
@@ -2317,7 +2320,7 @@ func getDomainCreateFlags(vmi *v1.VirtualMachineInstance) libvirt.DomainCreateFl
 		flags |= libvirt.DOMAIN_START_PAUSED
 	}
 	if vmi.IsCPUDedicated() && vmi.Spec.Domain.CPU.IsolateEmulatorThread {
-		flags |= libvirt.DOMAIN_START_PAUSED
+		flags |= libvirt.DOMAIN_START_PAUSED // TODO MSHV Check whether this needs to be commented out
 	}
 	return flags
 }

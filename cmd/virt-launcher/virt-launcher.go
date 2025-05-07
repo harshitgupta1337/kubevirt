@@ -46,8 +46,8 @@ import (
 	ephemeraldisk "kubevirt.io/kubevirt/pkg/ephemeral-disk"
 	"kubevirt.io/kubevirt/pkg/hooks"
 	hotplugdisk "kubevirt.io/kubevirt/pkg/hotplug-disk"
+	hypervisorInterface "kubevirt.io/kubevirt/pkg/hypervisor"
 	"kubevirt.io/kubevirt/pkg/ignition"
-	putil "kubevirt.io/kubevirt/pkg/util"
 	cmdclient "kubevirt.io/kubevirt/pkg/virt-handler/cmd-client"
 	virtlauncher "kubevirt.io/kubevirt/pkg/virt-launcher"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/metadata"
@@ -57,7 +57,6 @@ import (
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 	virtcli "kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/cli"
 	cmdserver "kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/cmd-server"
-	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/util"
 )
 
 const defaultStartTimeout = 3 * time.Minute
@@ -110,13 +109,8 @@ func startCmdServer(socketPath string,
 	return done
 }
 
-func createLibvirtConnection(runWithNonRoot bool) virtcli.Connection {
-	libvirtUri := "qemu:///system"
-	user := ""
-	if runWithNonRoot {
-		user = putil.NonRootUserString
-		libvirtUri = "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"
-	}
+func createLibvirtConnection(hypervisor hypervisorInterface.Hypervisor) virtcli.Connection {
+	libvirtUri, user := hypervisor.GetLibvirtUriAndUser()
 
 	domainConn, err := virtcli.NewConnection(libvirtUri, user, "", 10*time.Second)
 	if err != nil {
@@ -334,6 +328,7 @@ func waitForFinalNotify(deleteNotificationSent chan watch.Event,
 }
 
 func main() {
+	hypervisor := pflag.String("hypervisor", "qemu", "VMM to be used. Can be either \"qemu\" or \"ch\"")
 	qemuTimeout := pflag.Duration("qemu-timeout", defaultStartTimeout, "Amount of time to wait for qemu")
 	virtShareDir := pflag.String("kubevirt-share-dir", "/var/run/kubevirt", "Shared directory between virt-handler and virt-launcher")
 	ephemeralDiskDir := pflag.String("ephemeral-disk-dir", "/var/run/kubevirt-ephemeral-disks", "Base directory for ephemeral disk data")
@@ -404,19 +399,19 @@ func main() {
 	// Start virtqemud, virtlogd, and establish libvirt connection
 	stopChan := make(chan struct{})
 
-	l := util.NewLibvirtWrapper(*runWithNonRoot)
+	l := hypervisorInterface.NewHypervisorWithUser(*hypervisor, *runWithNonRoot)
 	err = l.SetupLibvirt(libvirtLogFilters)
 	if err != nil {
 		panic(err)
 	}
 
-	l.StartVirtqemud(stopChan)
+	l.StartHypervisorDaemon(stopChan)
 	// only single domain should be present
 	domainName := api.VMINamespaceKeyFunc(vmi)
 
-	util.StartVirtlog(stopChan, domainName, *runWithNonRoot)
+	l.StartVirtlog(stopChan, domainName)
 
-	domainConn := createLibvirtConnection(*runWithNonRoot)
+	domainConn := createLibvirtConnection(l)
 	defer domainConn.Close()
 
 	var agentStore = agentpoller.NewAsyncAgentStore()
@@ -457,6 +452,7 @@ func main() {
 
 	events := make(chan watch.Event, 2)
 	// Send domain notifications to virt-handler
+	// TODO Change names from QEMU to hypervisor-specific names
 	startDomainEventMonitoring(notifier, domainConn, events, vmi, domainName, &agentStore, *qemuAgentSysInterval, *qemuAgentFileInterval, *qemuAgentUserInterval, *qemuAgentVersionInterval, *qemuAgentFSFreezeStatusInterval, metadataCache)
 
 	c := make(chan os.Signal, 1)
@@ -481,12 +477,8 @@ func main() {
 
 	domain := waitForDomainUUID(*qemuTimeout, events, signalStopChan, domainManager)
 	if domain != nil {
-		var pidDir string
-		if *runWithNonRoot {
-			pidDir = "/run/libvirt/qemu/run"
-		} else {
-			pidDir = "/run/libvirt/qemu"
-		}
+		pidDir := l.GetPidDir()
+
 		mon := virtlauncher.NewProcessMonitor(domainName,
 			pidDir,
 			*gracePeriodSeconds,

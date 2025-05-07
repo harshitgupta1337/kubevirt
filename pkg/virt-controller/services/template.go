@@ -71,7 +71,6 @@ const (
 	virtExporter     = "virt-exporter"
 )
 
-const KvmDevice = "devices.kubevirt.io/kvm"
 const TunDevice = "devices.kubevirt.io/tun"
 const VhostNetDevice = "devices.kubevirt.io/vhost-net"
 const SevDevice = "devices.kubevirt.io/sev"
@@ -87,6 +86,7 @@ const qemuTimeoutJitterRange = 120
 const (
 	CAP_NET_BIND_SERVICE = "NET_BIND_SERVICE"
 	CAP_SYS_NICE         = "SYS_NICE"
+	CAP_NET_ADMIN        = "NET_ADMIN"
 )
 
 // LibvirtStartupDelay is added to custom liveness and readiness probes initial delay value.
@@ -95,23 +95,12 @@ const LibvirtStartupDelay = 10
 
 const IntelVendorName = "Intel"
 
-const ENV_VAR_LIBVIRT_DEBUG_LOGS = "LIBVIRT_DEBUG_LOGS"
-const ENV_VAR_VIRTIOFSD_DEBUG_LOGS = "VIRTIOFSD_DEBUG_LOGS"
-const ENV_VAR_VIRT_LAUNCHER_LOG_VERBOSITY = "VIRT_LAUNCHER_LOG_VERBOSITY"
-
 const ENV_VAR_POD_NAME = "POD_NAME"
-
-// extensive log verbosity threshold after which libvirt debug logs will be enabled
-const EXT_LOG_VERBOSITY_THRESHOLD = 5
 
 const ephemeralStorageOverheadSize = "50M"
 
+// TODO Instead of having this as a constant, make getting these values via  accessor functions
 const (
-	VirtLauncherMonitorOverhead = "25Mi"  // The `ps` RSS for virt-launcher-monitor
-	VirtLauncherOverhead        = "100Mi" // The `ps` RSS for the virt-launcher process
-	VirtlogdOverhead            = "20Mi"  // The `ps` RSS for virtlogd
-	VirtqemudOverhead           = "35Mi"  // The `ps` RSS for virtqemud
-	QemuOverhead                = "30Mi"  // The `ps` RSS for qemu, minus the RAM of its (stressed) guest, minus the virtual page table
 	// Default: limits.memory = 2*requests.memory
 	DefaultMemoryLimitOverheadRatio = float64(2.0)
 )
@@ -378,6 +367,7 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 	} else {
 		command = []string{"/usr/bin/virt-launcher-monitor",
 			"--qemu-timeout", generateQemuTimeoutWithJitter(t.launcherQemuTimeout),
+			"--hypervisor", vmi.Spec.Hypervisor,
 			"--name", domain,
 			"--uid", string(vmi.UID),
 			"--namespace", namespace,
@@ -437,14 +427,14 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 
 			virtLauncherLogVerbosity = uint(verbosityInt)
 		}
-		compute.Env = append(compute.Env, k8sv1.EnvVar{Name: ENV_VAR_VIRT_LAUNCHER_LOG_VERBOSITY, Value: verbosityStr})
+		compute.Env = append(compute.Env, k8sv1.EnvVar{Name: util.ENV_VAR_VIRT_LAUNCHER_LOG_VERBOSITY, Value: verbosityStr})
 	}
 
-	if labelValue, ok := vmi.Labels[debugLogs]; (ok && strings.EqualFold(labelValue, "true")) || virtLauncherLogVerbosity > EXT_LOG_VERBOSITY_THRESHOLD {
-		compute.Env = append(compute.Env, k8sv1.EnvVar{Name: ENV_VAR_LIBVIRT_DEBUG_LOGS, Value: "1"})
+	if labelValue, ok := vmi.Labels[debugLogs]; (ok && strings.EqualFold(labelValue, "true")) || virtLauncherLogVerbosity > util.EXT_LOG_VERBOSITY_THRESHOLD {
+		compute.Env = append(compute.Env, k8sv1.EnvVar{Name: util.ENV_VAR_LIBVIRT_DEBUG_LOGS, Value: "1"})
 	}
-	if labelValue, ok := vmi.Labels[virtiofsDebugLogs]; (ok && strings.EqualFold(labelValue, "true")) || virtLauncherLogVerbosity > EXT_LOG_VERBOSITY_THRESHOLD {
-		compute.Env = append(compute.Env, k8sv1.EnvVar{Name: ENV_VAR_VIRTIOFSD_DEBUG_LOGS, Value: "1"})
+	if labelValue, ok := vmi.Labels[virtiofsDebugLogs]; (ok && strings.EqualFold(labelValue, "true")) || virtLauncherLogVerbosity > util.EXT_LOG_VERBOSITY_THRESHOLD {
+		compute.Env = append(compute.Env, k8sv1.EnvVar{Name: util.ENV_VAR_VIRTIOFSD_DEBUG_LOGS, Value: "1"})
 	}
 
 	compute.Env = append(compute.Env, k8sv1.EnvVar{
@@ -740,9 +730,11 @@ func (t *templateService) newContainerSpecRenderer(vmi *v1.VirtualMachineInstanc
 		computeContainerOpts = append(computeContainerOpts, WithNonRoot(userId))
 		computeContainerOpts = append(computeContainerOpts, WithDropALLCapabilities())
 	}
+
 	if t.IsPPC64() {
 		computeContainerOpts = append(computeContainerOpts, WithPrivileged())
 	}
+
 	if vmi.Spec.ReadinessProbe != nil {
 		computeContainerOpts = append(computeContainerOpts, WithReadinessProbe(vmi))
 	}

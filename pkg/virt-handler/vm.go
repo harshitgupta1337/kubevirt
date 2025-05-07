@@ -36,6 +36,7 @@ import (
 	"strings"
 	"time"
 
+	"kubevirt.io/kubevirt/pkg/hypervisor"
 	backendstorage "kubevirt.io/kubevirt/pkg/storage/backend-storage"
 
 	cmdv1 "kubevirt.io/kubevirt/pkg/handler-launcher-com/cmd/v1"
@@ -1295,7 +1296,7 @@ func (d *VirtualMachineController) updateFSFreezeStatus(vmi *v1.VirtualMachineIn
 
 }
 
-func IsoGuestVolumePath(namespace, name string, volume *v1.Volume) string {
+func IsoGuestVolumePath(vmi *v1.VirtualMachineInstance, namespace, name string, volume *v1.Volume) string {
 	const basepath = "/var/run"
 	switch {
 	case volume.CloudInitNoCloud != nil:
@@ -1346,7 +1347,7 @@ func (d *VirtualMachineController) updateIsoSizeStatus(vmi *v1.VirtualMachineIns
 			continue
 		}
 
-		volPath := IsoGuestVolumePath(vmi.Namespace, vmi.Name, &volume)
+		volPath := IsoGuestVolumePath(vmi, vmi.Namespace, vmi.Name, &volume)
 		if volPath == "" {
 			continue
 		}
@@ -2073,6 +2074,9 @@ func (d *VirtualMachineController) defaultExecute(key string,
 		if err != nil {
 			return err
 		}
+
+		log.Log.Object(vmi).V(3).Infof("DEBUG vmi.Status.Phase = %v, domain phase = %v", vmi.Status.Phase, phase)
+
 		if vmi.Status.Phase == phase {
 			shouldUpdate = true
 		}
@@ -2660,8 +2664,10 @@ func (d *VirtualMachineController) handleTargetMigrationProxy(vmi *v1.VirtualMac
 		return err
 	}
 
+	hypervisor := hypervisor.NewHypervisor(vmi.Spec.Hypervisor)
+
 	// Get the libvirt connection socket file on the destination pod.
-	socketFile := fmt.Sprintf(filepath.Join(d.virtLauncherFSRunDirPattern, "libvirt/virtqemud-sock"), res.Pid())
+	socketFile := fmt.Sprintf(filepath.Join(d.virtLauncherFSRunDirPattern, hypervisor.GetLibvirtSocketPath()), res.Pid())
 	// the migration-proxy is no longer shared via host mount, so we
 	// pass in the virt-launcher's baseDir to reach the unix sockets.
 	baseDir := fmt.Sprintf(filepath.Join(d.virtLauncherFSRunDirPattern, "kubevirt"), res.Pid())
@@ -2914,9 +2920,14 @@ func (d *VirtualMachineController) vmUpdateHelperMigrationTarget(origVMI *v1.Vir
 		return err
 	}
 
-	err = d.claimDeviceOwnership(virtLauncherRootMount, "kvm")
+	hypervisor := hypervisor.NewHypervisor(vmi.Spec.Hypervisor)
+	hypervisorDevice := hypervisor.GetHypervisorDevice()
+	// Get substring in hypervisorDevice string after "devices.kubevirt.io/"
+	hypervisorDevice = strings.TrimPrefix(hypervisorDevice, "devices.kubevirt.io/")
+
+	err = d.claimDeviceOwnership(virtLauncherRootMount, hypervisorDevice)
 	if err != nil {
-		return fmt.Errorf("failed to set up file ownership for /dev/kvm: %v", err)
+		return fmt.Errorf("failed to set up file ownership for /dev/%s: %v", hypervisorDevice, err)
 	}
 	if virtutil.IsAutoAttachVSOCK(vmi) {
 		if err := d.claimDeviceOwnership(virtLauncherRootMount, "vhost-vsock"); err != nil {
@@ -2988,7 +2999,7 @@ func (d *VirtualMachineController) affinePitThread(vmi *v1.VirtualMachineInstanc
 			return fmt.Errorf("failed to set FIFO scheduling and priority 2 for thread %d: %w", pitpid, err)
 		}
 	}
-	vcpus, err := getVCPUThreadIDs(qemupid)
+	vcpus, err := getVCPUThreadIDs(qemupid, hypervisor.NewHypervisor(vmi.Spec.Hypervisor).GetVcpuRegex())
 	if err != nil {
 		return err
 	}
@@ -3135,9 +3146,14 @@ func (d *VirtualMachineController) vmUpdateHelperDefault(origVMI *v1.VirtualMach
 			return err
 		}
 
-		err = d.claimDeviceOwnership(virtLauncherRootMount, "kvm")
+		hypervisor := hypervisor.NewHypervisor(vmi.Spec.Hypervisor)
+		hypervisorDevice := hypervisor.GetHypervisorDevice()
+		// Get substring in hypervisorDevice string after "devices.kubevirt.io/"
+		hypervisorDevice = strings.TrimPrefix(hypervisorDevice, "devices.kubevirt.io/")
+
+		err = d.claimDeviceOwnership(virtLauncherRootMount, hypervisorDevice)
 		if err != nil {
-			return fmt.Errorf("failed to set up file ownership for /dev/kvm: %v", err)
+			return fmt.Errorf("failed to set up file ownership for /dev/%s: %v", hypervisorDevice, err)
 		}
 		if virtutil.IsAutoAttachVSOCK(vmi) {
 			if err := d.claimDeviceOwnership(virtLauncherRootMount, "vhost-vsock"); err != nil {
