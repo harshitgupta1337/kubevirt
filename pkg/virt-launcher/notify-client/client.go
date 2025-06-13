@@ -34,7 +34,7 @@ var (
 	supportedNotifyVersions = []uint32{1}
 )
 
-type Notifier struct {
+type NotifyClient struct {
 	v1client         notifyv1.NotifyClient
 	conn             *grpc.ClientConn
 	connLock         sync.Mutex
@@ -72,7 +72,7 @@ func init() {
 	addToScheme(scheme)
 }
 
-func negotiateVersion(infoClient info.NotifyInfoClient) (uint32, error) {
+func NegotiateVersion(infoClient info.NotifyInfoClient) (uint32, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	info, err := infoClient.Info(ctx, &info.NotifyInfoRequest{})
@@ -95,14 +95,14 @@ func negotiateVersion(infoClient info.NotifyInfoClient) (uint32, error) {
 }
 
 // used by unit tests
-func (n *Notifier) SetCustomTimeouts(interval, send, total time.Duration) {
+func (n *NotifyClient) SetCustomTimeouts(interval, send, total time.Duration) {
 	n.intervalTimeout = interval
 	n.sendTimeout = send
 	n.totalTimeout = total
 
 }
 
-func (n *Notifier) detectSocketPath() string {
+func (n *NotifyClient) detectSocketPath() string {
 
 	// use the legacy domain socket if it exists. This would
 	// occur if the vmi was started with a hostPath shared mount
@@ -116,7 +116,7 @@ func (n *Notifier) detectSocketPath() string {
 	return n.pipeSocketPath
 }
 
-func (n *Notifier) connect() error {
+func (n *NotifyClient) connect() error {
 	if n.conn != nil {
 		// already connected
 		return nil
@@ -131,7 +131,7 @@ func (n *Notifier) connect() error {
 		return err
 	}
 
-	version, err := negotiateVersion(info.NewNotifyInfoClient(conn))
+	version, err := NegotiateVersion(info.NewNotifyInfoClient(conn))
 	if err != nil {
 		log.Log.Reason(err).Infof("failed to negotiate version")
 		conn.Close()
@@ -153,7 +153,7 @@ func (n *Notifier) connect() error {
 	return nil
 }
 
-func (n *Notifier) SendDomainEvent(event watch.Event) error {
+func (n *NotifyClient) SendDomainEvent(event watch.Event) error {
 
 	var domainJSON []byte
 	var statusJSON []byte
@@ -270,14 +270,14 @@ func (n *Notifier) SendK8sEvent(vmi *v1.VirtualMachineInstance, severity string,
 	return nil
 }
 
-func (n *Notifier) _close() {
+func (n *NotifyClient) _close() {
 	if n.conn != nil {
 		n.conn.Close()
 		n.conn = nil
 	}
 }
 
-func (n *Notifier) Close() {
+func (n *NotifyClient) Close() {
 	n.connLock.Lock()
 	defer n.connLock.Unlock()
 	n._close()
