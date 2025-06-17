@@ -55,7 +55,7 @@ var _ = Describe("Notify", func() {
 
 		var eventChan chan watch.Event
 		var deleteNotificationSent chan watch.Event
-		var client *notifyCommon.NotifyClient
+		var client *notifyCommon.Notifier
 
 		var mockLibvirt *testing.Libvirt
 		var e *eventCaller
@@ -77,7 +77,7 @@ var _ = Describe("Notify", func() {
 				notifyserver.RunServer(shareDir, stop, eventChan, nil, nil)
 			}()
 
-			client = notifyCommon.NewNotifyClient(shareDir)
+			client = notifyCommon.NewNotifier(shareDir)
 
 			DeferCleanup(
 				func() {
@@ -258,7 +258,7 @@ var _ = Describe("Notify", func() {
 		var stopped bool
 		var eventChan chan watch.Event
 		var deleteNotificationSent chan watch.Event
-		var client *notifyCommon.NotifyClient
+		var client *notifyCommon.Notifier
 		var recorder *record.FakeRecorder
 		var vmiStore cache.Store
 		var e *eventCaller
@@ -283,7 +283,7 @@ var _ = Describe("Notify", func() {
 
 			time.Sleep(1 * time.Second)
 
-			client = notifyCommon.NewNotifyClient(shareDir)
+			client = notifyCommon.NewNotifier(shareDir)
 		})
 
 		AfterEach(func() {

@@ -131,7 +131,7 @@ func createLibvirtConnection(runWithNonRoot bool) virtcli.Connection {
 }
 
 func startDomainEventMonitoring(
-	notifier *notifyclientcommon.NotifyClient,
+	notifier *notifyclientcommon.Notifier,
 	domainConn virtcli.Connection,
 	deleteNotificationSent chan watch.Event,
 	vmi *v1.VirtualMachineInstance,
@@ -153,7 +153,7 @@ func startDomainEventMonitoring(
 		}
 	}()
 
-	err := notifyclient.StartLibvirtDomainNotifier(notifier, domainConn, deleteNotificationSent, vmi, domainName, agentStore, qemuAgentSysInterval, qemuAgentFileInterval, qemuAgentUserInterval, qemuAgentVersionInterval, qemuAgentFSFreezeStatusInterval, metadataCache)
+	err := notifyclient.StartLibvirtNotifier(notifier, domainConn, deleteNotificationSent, vmi, domainName, agentStore, qemuAgentSysInterval, qemuAgentFileInterval, qemuAgentUserInterval, qemuAgentVersionInterval, qemuAgentFSFreezeStatusInterval, metadataCache)
 	if err != nil {
 		panic(err)
 	}
@@ -424,7 +424,7 @@ func main() {
 
 	var agentStore = agentpoller.NewAsyncAgentStore()
 
-	notifier := notifyclientcommon.NewNotifyClient(*virtShareDir)
+	notifier := notifyclientcommon.NewNotifier(*virtShareDir)
 	defer notifier.Close()
 
 	metadataCache := metadata.NewCache()

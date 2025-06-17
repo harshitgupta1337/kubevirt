@@ -3703,7 +3703,7 @@ var _ = Describe("DomainNotifyServerRestarts", func() {
 		var domainPipeStopChan chan struct{}
 		var stoppedPipe bool
 		var eventChan chan watch.Event
-		var client *notifyclient.NotifyClient
+		var client *notifyclient.Notifier
 		var recorder *record.FakeRecorder
 		var vmiStore cache.Store
 
@@ -3762,7 +3762,7 @@ var _ = Describe("DomainNotifyServerRestarts", func() {
 			handleDomainNotifyPipe(domainPipeStopChan, listener, shareDir, vmi)
 			time.Sleep(1)
 
-			client = notifyclient.NewNotifyClient(pipeDir)
+			client = notifyclient.NewNotifier(pipeDir)
 
 			err = client.SendK8sEvent(vmi, eventType, eventReason, eventMessage)
 			Expect(err).ToNot(HaveOccurred())
@@ -3794,7 +3794,7 @@ var _ = Describe("DomainNotifyServerRestarts", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Client should fail when pipe is offline
-			client = notifyclient.NewNotifyClient(pipeDir)
+			client = notifyclient.NewNotifier(pipeDir)
 
 			client.SetCustomTimeouts(1*time.Second, 1*time.Second, 3*time.Second)
 
@@ -3834,7 +3834,7 @@ var _ = Describe("DomainNotifyServerRestarts", func() {
 			handleDomainNotifyPipe(domainPipeStopChan, listener, shareDir, vmi)
 			time.Sleep(1)
 
-			client = notifyclient.NewNotifyClient(pipeDir)
+			client = notifyclient.NewNotifier(pipeDir)
 
 			for i := 1; i < 5; i++ {
 				// close and wait for server to stop

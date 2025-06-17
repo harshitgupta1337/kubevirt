@@ -57,7 +57,7 @@ func (e *eventCaller) updateStatus(status *api.DomainStatus) {
 	e.domainStatusChangeReason = status.Reason
 }
 
-func (e *eventCaller) eventCallback(c cli.Connection, domain *api.Domain, libvirtEvent libvirtEvent, client *eventsClientCommon.NotifyClient, events chan watch.Event,
+func (e *eventCaller) eventCallback(c cli.Connection, domain *api.Domain, libvirtEvent libvirtEvent, client *eventsClientCommon.Notifier, events chan watch.Event,
 	interfaceStatus []api.InterfaceStatus, osInfo *api.GuestOSInfo, vmi *v1.VirtualMachineInstance, fsFreezeStatus *api.FSFreeze,
 	metadataCache *metadata.Cache) {
 
@@ -185,7 +185,7 @@ func updateEventsClosure() func(event watch.Event, domain *api.Domain, events ch
 }
 
 func StartLibvirtNotifier(
-	notifier *eventsClientCommon.NotifyClient,
+	notifier *eventsClientCommon.Notifier,
 	domainConn cli.Connection,
 	deleteNotificationSent chan watch.Event,
 	vmi *v1.VirtualMachineInstance,

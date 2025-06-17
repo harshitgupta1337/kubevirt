@@ -34,7 +34,7 @@ var (
 	supportedNotifyVersions = []uint32{1}
 )
 
-type NotifyClient struct {
+type Notifier struct {
 	v1client         notifyv1.NotifyClient
 	conn             *grpc.ClientConn
 	connLock         sync.Mutex
@@ -95,14 +95,14 @@ func NegotiateVersion(infoClient info.NotifyInfoClient) (uint32, error) {
 }
 
 // used by unit tests
-func (n *NotifyClient) SetCustomTimeouts(interval, send, total time.Duration) {
+func (n *Notifier) SetCustomTimeouts(interval, send, total time.Duration) {
 	n.intervalTimeout = interval
 	n.sendTimeout = send
 	n.totalTimeout = total
 
 }
 
-func (n *NotifyClient) detectSocketPath() string {
+func (n *Notifier) detectSocketPath() string {
 
 	// use the legacy domain socket if it exists. This would
 	// occur if the vmi was started with a hostPath shared mount
@@ -116,7 +116,7 @@ func (n *NotifyClient) detectSocketPath() string {
 	return n.pipeSocketPath
 }
 
-func (n *NotifyClient) connect() error {
+func (n *Notifier) connect() error {
 	if n.conn != nil {
 		// already connected
 		return nil
@@ -153,7 +153,7 @@ func (n *NotifyClient) connect() error {
 	return nil
 }
 
-func (n *NotifyClient) SendDomainEvent(event watch.Event) error {
+func (n *Notifier) SendDomainEvent(event watch.Event) error {
 
 	var domainJSON []byte
 	var statusJSON []byte
@@ -270,14 +270,14 @@ func (n *Notifier) SendK8sEvent(vmi *v1.VirtualMachineInstance, severity string,
 	return nil
 }
 
-func (n *NotifyClient) _close() {
+func (n *Notifier) _close() {
 	if n.conn != nil {
 		n.conn.Close()
 		n.conn = nil
 	}
 }
 
-func (n *NotifyClient) Close() {
+func (n *Notifier) Close() {
 	n.connLock.Lock()
 	defer n.connLock.Unlock()
 	n._close()
