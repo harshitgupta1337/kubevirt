@@ -1,5 +1,6 @@
 cmd/cniplugins
 cmd/sidecars/network-passt-binding/callback
+cmd/sidecars/network-passt-binding/server
 cmd/sidecars/network-slirp-binding/callback
 cmd/virtctl
 pkg/instancetype
@@ -10,6 +11,7 @@ pkg/network/deviceinfo
 pkg/network/domainspec
 pkg/network/downwardapi
 pkg/network/driver/netlink
+pkg/network/driver/virtchroot
 pkg/network/errors
 pkg/network/istio
 pkg/network/migration
@@ -28,6 +30,8 @@ pkg/storage/velero
 pkg/virtctl/adm
 pkg/virtctl/clientconfig
 pkg/virtctl/configuration
+pkg/virtctl/console
+pkg/virtctl/create/clone
 pkg/virtctl/create/params
 pkg/virtctl/create/vm
 pkg/virtctl/credentials

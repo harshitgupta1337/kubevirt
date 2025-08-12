@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"kubevirt.io/kubevirt/pkg/instancetype/revision"
+	"kubevirt.io/kubevirt/pkg/libvmi"
 	"kubevirt.io/kubevirt/pkg/liveupdate/memory"
 	"kubevirt.io/kubevirt/pkg/pointer"
 
@@ -254,7 +255,7 @@ type instancetypeHandler interface {
 	synchronizer
 	ApplyToVM(*virtv1.VirtualMachine) error
 	ApplyToVMI(*virtv1.VirtualMachine, *virtv1.VirtualMachineInstance) error
-	ApplyDevicePreferences(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance) error
+	ApplyAutoAttachPreferences(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance) error
 }
 
 type Controller struct {
@@ -1136,6 +1137,11 @@ func (c *Controller) syncRunStrategy(vm *virtv1.VirtualMachine, vmi *virtv1.Virt
 			if val, ok := vmi.Annotations[virtv1.CreateMigrationTarget]; !ok || val != "true" {
 				if vmi.Status.MigrationState != nil && vmi.Status.MigrationState.Completed {
 					log.Log.Object(vm).V(4).Infof("VMI %s/%s is a receiver VMI and has completed migration", vmi.Namespace, vmi.Name)
+					// Restore the original run strategy
+					if val, ok := vm.Annotations[virtv1.RestoreRunStrategy]; ok {
+						vm.Spec.RunStrategy = pointer.P(virtv1.VirtualMachineRunStrategy(val))
+					}
+
 					return vm, nil
 				}
 				return vm, common.NewSyncError(fmt.Errorf(nonReceiverVMI), failedCreateReason)
@@ -1261,7 +1267,7 @@ func (c *Controller) startVMI(vm *virtv1.VirtualMachine) (*virtv1.VirtualMachine
 	}
 
 	// start it
-	vmi := c.setupVMIFromVM(vm)
+	vmi := SetupVMIFromVM(vm)
 	vmRevisionName, err := c.createVMRevision(vm)
 	if err != nil {
 		log.Log.Object(vm).Reason(err).Error(failedCreateCRforVmErrMsg)
@@ -1280,17 +1286,14 @@ func (c *Controller) startVMI(vm *virtv1.VirtualMachine) (*virtv1.VirtualMachine
 	// the VMI before it is deleted
 	vmi.Finalizers = append(vmi.Finalizers, virtv1.VirtualMachineControllerFinalizer)
 
-	// We need to apply device preferences before any new network or input devices are added. Doing so allows
-	// any autoAttach preferences we might have to be applied, either enabling or disabling the attachment of these devices.
-	if err := c.instancetypeController.ApplyDevicePreferences(vm, vmi); err != nil {
+	// We need to apply auto attach preferences before any new network or input devices are added.
+	if err := c.instancetypeController.ApplyAutoAttachPreferences(vm, vmi); err != nil {
 		log.Log.Object(vm).Infof("Failed to apply device preferences again to VirtualMachineInstance: %s/%s", vmi.Namespace, vmi.Name)
 		c.recorder.Eventf(vm, k8score.EventTypeWarning, common.FailedCreateVirtualMachineReason, "Error applying device preferences again: %v", err)
 		return vm, err
 	}
 
-	util.SetDefaultVolumeDisk(&vmi.Spec)
-
-	autoAttachInputDevice(vmi)
+	AutoAttachInputDevice(vmi)
 
 	err = netvmispec.SetDefaultNetworkInterface(c.clusterConfig, &vmi.Spec)
 	if err != nil {
@@ -1879,9 +1882,9 @@ func (c *Controller) createVMRevision(vm *virtv1.VirtualMachine) (string, error)
 	return cr.Name, nil
 }
 
-// setupVMIfromVM creates a VirtualMachineInstance object from one VirtualMachine object.
-func (c *Controller) setupVMIFromVM(vm *virtv1.VirtualMachine) *virtv1.VirtualMachineInstance {
-	vmi := virtv1.NewVMIReferenceFromNameWithNS(vm.ObjectMeta.Namespace, "")
+// SetupVMIfromVM creates a VirtualMachineInstance object from one VirtualMachine object.
+func SetupVMIFromVM(vm *virtv1.VirtualMachine) *virtv1.VirtualMachineInstance {
+	vmi := libvmi.New()
 	vmi.ObjectMeta = *vm.Spec.Template.ObjectMeta.DeepCopy()
 	vmi.ObjectMeta.Name = vm.ObjectMeta.Name
 	vmi.ObjectMeta.GenerateName = ""
@@ -1905,6 +1908,8 @@ func (c *Controller) setupVMIFromVM(vm *virtv1.VirtualMachine) *virtv1.VirtualMa
 	vmi.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
 		*metav1.NewControllerRef(vm, virtv1.VirtualMachineGroupVersionKind),
 	}
+
+	util.SetDefaultVolumeDisk(&vmi.Spec)
 
 	return vmi
 }
@@ -3208,13 +3213,6 @@ func (c *Controller) sync(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineI
 	if syncErr != nil {
 		return vm, vmi, syncErr, nil
 	}
-	if vm.Spec.RunStrategy != nil && *vm.Spec.RunStrategy == virtv1.RunStrategyWaitAsReceiver {
-		// Restore the original run strategy
-		if val, ok := vm.Annotations[virtv1.RestoreRunStrategy]; ok {
-			vm.Spec.RunStrategy = pointer.P(virtv1.VirtualMachineRunStrategy(val))
-			origRunStrategy = vm.Spec.RunStrategy
-		}
-	}
 
 	restartRequired := c.addRestartRequiredIfNeeded(startVMSpec, vm, vmi)
 
@@ -3224,7 +3222,6 @@ func (c *Controller) sync(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineI
 	if !c.satisfiedExpectations(key) {
 		return vm, vmi, nil, nil
 	}
-
 	vmCopy := vm.DeepCopy()
 	vm.Spec.RunStrategy = origRunStrategy
 
@@ -3334,7 +3331,7 @@ func (c *Controller) resolveControllerRef(namespace string, controllerRef *metav
 	return vm.(*virtv1.VirtualMachine)
 }
 
-func autoAttachInputDevice(vmi *virtv1.VirtualMachineInstance) {
+func AutoAttachInputDevice(vmi *virtv1.VirtualMachineInstance) {
 	autoAttachInput := vmi.Spec.Domain.Devices.AutoattachInputDevice
 	// Default to False if nil and return, otherwise return if input devices are already present
 	if autoAttachInput == nil || !*autoAttachInput || len(vmi.Spec.Domain.Devices.Inputs) > 0 {

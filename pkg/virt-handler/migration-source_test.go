@@ -42,6 +42,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+
 	v1 "kubevirt.io/api/core/v1"
 	api2 "kubevirt.io/client-go/api"
 	"kubevirt.io/client-go/kubecli"
@@ -61,7 +62,7 @@ import (
 	virtcache "kubevirt.io/kubevirt/pkg/virt-handler/cache"
 	cmdclient "kubevirt.io/kubevirt/pkg/virt-handler/cmd-client"
 	"kubevirt.io/kubevirt/pkg/virt-handler/isolation"
-	launcher_clients "kubevirt.io/kubevirt/pkg/virt-handler/launcher-clients"
+	launcherclients "kubevirt.io/kubevirt/pkg/virt-handler/launcher-clients"
 	migrationproxy "kubevirt.io/kubevirt/pkg/virt-handler/migration-proxy"
 	notifyserver "kubevirt.io/kubevirt/pkg/virt-handler/notify-server"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
@@ -92,18 +93,18 @@ var _ = Describe("VirtualMachineInstance migration target", func() {
 	)
 
 	addDomain := func(domain *api.Domain) {
-		controller.domainStore.Add(domain)
+		Expect(controller.domainStore.Add(domain)).To(Succeed())
 		key, err := virtcontroller.KeyFunc(domain)
-		Expect(err).To(Not(HaveOccurred()))
+		Expect(err).ToNot(HaveOccurred())
 		controller.queue.Add(key)
 	}
 
 	createVMI := func(vmi *v1.VirtualMachineInstance) {
-		controller.vmiStore.Add(vmi)
+		Expect(controller.vmiStore.Add(vmi)).To(Succeed())
 		_, err := virtfakeClient.KubevirtV1().VirtualMachineInstances(metav1.NamespaceDefault).Create(context.TODO(), vmi, metav1.CreateOptions{})
-		Expect(err).To(Not(HaveOccurred()))
+		Expect(err).ToNot(HaveOccurred())
 		key, err := virtcontroller.KeyFunc(vmi)
-		Expect(err).To(Not(HaveOccurred()))
+		Expect(err).ToNot(HaveOccurred())
 		controller.queue.Add(key)
 	}
 
@@ -135,11 +136,12 @@ var _ = Describe("VirtualMachineInstance migration target", func() {
 
 		_ = virtcache.InitializeGhostRecordCache(virtcache.NewIterableCheckpointManager(ghostCacheDir))
 
-		os.MkdirAll(filepath.Join(vmiShareDir, "var", "run", "kubevirt"), 0755)
+		Expect(os.MkdirAll(filepath.Join(vmiShareDir, "var", "run", "kubevirt"), 0755)).To(Succeed())
 
 		cmdclient.SetPodsBaseDir(podsDir)
 
 		store, err := certificates.GenerateSelfSignedCert(certDir, "test", "test")
+		Expect(err).ToNot(HaveOccurred())
 
 		tlsConfig := &tls.Config{
 			InsecureSkipVerify: true,
@@ -147,7 +149,6 @@ var _ = Describe("VirtualMachineInstance migration target", func() {
 				return store.Current()
 			},
 		}
-		Expect(err).ToNot(HaveOccurred())
 
 		vmiInformer, _ := testutils.NewFakeInformerFor(&v1.VirtualMachineInstance{})
 		domainInformer, _ := testutils.NewFakeInformerFor(&api.Domain{})
@@ -173,7 +174,7 @@ var _ = Describe("VirtualMachineInstance migration target", func() {
 		Expect(os.MkdirAll(filepath.Join(vmiShareDir, "dev"), 0755)).To(Succeed())
 		f, err := os.OpenFile(filepath.Join(vmiShareDir, "dev", "kvm"), os.O_CREATE, 0755)
 		Expect(err).ToNot(HaveOccurred())
-		f.Close()
+		Expect(f.Close()).To(Succeed())
 
 		mockIsolationResult := isolation.NewMockIsolationResult(ctrl)
 		mockIsolationResult.EXPECT().Pid().Return(1).AnyTimes()
@@ -186,7 +187,7 @@ var _ = Describe("VirtualMachineInstance migration target", func() {
 		mockIsolationDetector.EXPECT().AdjustResources(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 		migrationProxy := migrationproxy.NewMigrationProxyManager(tlsConfig, tlsConfig, config)
-		launcherClientManager := &launcher_clients.MockLauncherClientManager{
+		launcherClientManager := &launcherclients.MockLauncherClientManager{
 			Initialized: true,
 		}
 		migrationSourcePasstRepairHandler = &stubSourcePasstRepairHandler{isHandleMigrationSourceCalled: false}
@@ -202,6 +203,7 @@ var _ = Describe("VirtualMachineInstance migration target", func() {
 			mockIsolationDetector,
 			migrationProxy,
 			"/tmp/%d",
+			&netStatStub{},
 			migrationSourcePasstRepairHandler,
 		)
 
@@ -211,7 +213,7 @@ var _ = Describe("VirtualMachineInstance migration target", func() {
 		Expect(os.MkdirAll(filepath.Dir(sockFile), 0755)).To(Succeed())
 		f, err = os.Create(sockFile)
 		Expect(err).ToNot(HaveOccurred())
-		f.Close()
+		Expect(f.Close()).To(Succeed())
 
 		mockQueue = testutils.NewMockWorkQueue(controller.queue)
 		controller.queue = mockQueue
@@ -219,8 +221,9 @@ var _ = Describe("VirtualMachineInstance migration target", func() {
 		wg.Add(1)
 
 		go func() {
-			notifyserver.RunServer(shareDir, stop, eventChan, nil, nil)
+			err = notifyserver.RunServer(shareDir, stop, eventChan, nil, nil)
 			wg.Done()
+			Expect(err).ToNot(HaveOccurred())
 		}()
 		client = cmdclient.NewMockLauncherClient(ctrl)
 		clientInfo := &virtcache.LauncherClientInfo{
@@ -474,17 +477,29 @@ var _ = Describe("VirtualMachineInstance migration target", func() {
 				Entry("with a zero CPU quantity", pointer.P(resource.MustParse("0"))),
 			)
 
-			It("should not configure multiple threads if CPU is limited", func() {
-				vmi.Spec.Domain.Resources.Limits[k8sv1.ResourceCPU] = resource.MustParse("4")
+			DescribeTable("should not configure multiple threads", func(allowPostcopy bool, vmiLimits k8sv1.ResourceList) {
+				var migrationConfiguration = &v1.MigrationConfiguration{
+					BandwidthPerMigration:   pointer.P(resource.MustParse("0Mi")),
+					ProgressTimeout:         pointer.P(int64(150)),
+					AllowAutoConverge:       pointer.P(false),
+					CompletionTimeoutPerGiB: pointer.P(int64(50)),
+					UnsafeMigrationOverride: pointer.P(false),
+					AllowPostCopy:           pointer.P(allowPostcopy),
+					AllowWorkloadDisruption: pointer.P(true),
+				}
+				vmi.Status.MigrationState.MigrationConfiguration = migrationConfiguration
+				vmi.Spec.Domain.Resources.Limits = vmiLimits
 
 				client.EXPECT().MigrateVirtualMachine(gomock.Any(), gomock.Any()).Do(func(_ *v1.VirtualMachineInstance, options *cmdclient.MigrationOptions) {
-					Expect(options).ToNot(BeNil())
 					Expect(options.ParallelMigrationThreads).To(BeNil())
 				}).Times(1).Return(nil)
 
 				controller.Execute()
 				testutils.ExpectEvent(recorder, VMIMigrating)
-			})
+			},
+				Entry("if CPU is limited", false, k8sv1.ResourceList{k8sv1.ResourceCPU: resource.MustParse("4")}),
+				Entry("if post-copy is enabled", true, k8sv1.ResourceList{}),
+			)
 		})
 	})
 
@@ -514,6 +529,10 @@ var _ = Describe("VirtualMachineInstance migration target", func() {
 
 		domain := api.NewMinimalDomainWithUUID("testvmi", vmiTestUUID)
 		domain.Status.Status = api.Running
+		const testIfaceName = "eth0"
+		domain.Status.Interfaces = []api.InterfaceStatus{
+			{InterfaceName: testIfaceName},
+		}
 		addVMI(vmi, domain)
 		options := &cmdclient.MigrationOptions{
 			Bandwidth:                resource.MustParse("0Mi"),
@@ -527,6 +546,9 @@ var _ = Describe("VirtualMachineInstance migration target", func() {
 		sanityExecute()
 		testutils.ExpectEvent(recorder, VMIMigrating)
 		Expect(migrationSourcePasstRepairHandler.isHandleMigrationSourceCalled).Should(BeTrue())
+		updatedVMI, err := virtfakeClient.KubevirtV1().VirtualMachineInstances(metav1.NamespaceDefault).Get(context.TODO(), vmi.Name, metav1.GetOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(updatedVMI.Status.Interfaces[0].InterfaceName).To(Equal(testIfaceName))
 	})
 })
 

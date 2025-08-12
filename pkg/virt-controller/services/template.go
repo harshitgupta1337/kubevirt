@@ -1193,7 +1193,7 @@ func (t *templateService) RenderExporterManifest(vmExport *exportv1.VirtualMachi
 			RestartPolicy: k8sv1.RestartPolicyNever,
 			Containers: []k8sv1.Container{
 				{
-					Name:            naming.GetName(namePrefix, vmExport.Name, validation.DNS1035LabelMaxLength),
+					Name:            "exporter",
 					Image:           t.exporterImage,
 					ImagePullPolicy: t.clusterConfig.GetImagePullPolicy(),
 					Env: []k8sv1.EnvVar{
@@ -1570,6 +1570,9 @@ func podLabels(vmi *v1.VirtualMachineInstance, hostName string) map[string]strin
 	labels[v1.AppLabel] = "virt-launcher"
 	labels[v1.CreatedByLabel] = string(vmi.UID)
 	labels[v1.VirtualMachineNameLabel] = hostName
+	if val, exists := vmi.Annotations[istio.InjectSidecarAnnotation]; exists {
+		labels[istio.InjectSidecarLabel] = val
+	}
 	return labels
 }
 

@@ -338,40 +338,21 @@ var _ = Describe(SIG("VirtualMachineSnapshot Tests", func() {
 			}
 
 			It("[test_id:6767]with volumes and guest agent available", decorators.StorageCritical, func() {
-				quantity, err := resource.ParseQuantity("1Gi")
-				Expect(err).ToNot(HaveOccurred())
-				vmi := libvmifact.NewFedora(libnet.WithMasqueradeNetworking())
-				vmi.Namespace = testsuite.GetTestNamespace(nil)
-				vm = libvmi.NewVirtualMachine(vmi)
-				dvName := "dv-" + vm.Name
-				dataVolume := libdv.NewDataVolume(
-					libdv.WithName(dvName),
+				dv := libdv.NewDataVolume(
 					libdv.WithBlankImageSource(),
-					libdv.WithStorage(
-						libdv.StorageWithStorageClass(snapshotStorageClass),
-						libdv.StorageWithVolumeSize(quantity.String()),
+					libdv.WithStorage(libdv.StorageWithStorageClass(snapshotStorageClass)),
+				)
+				vm, vmi := createAndStartVM(
+					libvmi.NewVirtualMachine(
+						libvmifact.NewFedora(
+							libvmi.WithNamespace(testsuite.GetTestNamespace(nil)),
+							libnet.WithMasqueradeNetworking(),
+							libvmi.WithDataVolume("blank", dv.Name),
+						),
+						libvmi.WithDataVolumeTemplate(dv),
 					),
 				)
-				libstorage.AddDataVolumeTemplate(vm, dataVolume)
 
-				vm.Spec.Template.Spec.Domain.Devices.Disks = append(vm.Spec.Template.Spec.Domain.Devices.Disks, v1.Disk{
-					Name: "blank",
-					DiskDevice: v1.DiskDevice{
-						Disk: &v1.DiskTarget{
-							Bus: v1.DiskBusVirtio,
-						},
-					},
-				})
-				vm.Spec.Template.Spec.Volumes = append(vm.Spec.Template.Spec.Volumes, v1.Volume{
-					Name: "blank",
-					VolumeSource: v1.VolumeSource{
-						DataVolume: &v1.DataVolumeSource{
-							Name: "dv-" + vm.Name,
-						},
-					},
-				})
-
-				vm, vmi = createAndStartVM(vm)
 				libwait.WaitForSuccessfulVMIStart(vmi,
 					libwait.WithTimeout(300),
 				)
@@ -407,39 +388,23 @@ var _ = Describe(SIG("VirtualMachineSnapshot Tests", func() {
 			})
 
 			It("[test_id:6768]with volumes and no guest agent available", decorators.StorageCritical, func() {
-				quantity, err := resource.ParseQuantity("1Gi")
-				Expect(err).ToNot(HaveOccurred())
-				vmi := libvmifact.NewAlpine(libnet.WithMasqueradeNetworking())
-				vmi.Namespace = testsuite.GetTestNamespace(nil)
-				vm = libvmi.NewVirtualMachine(vmi)
-				dvName := "dv-" + vm.Name
-				dataVolume := libdv.NewDataVolume(
-					libdv.WithName(dvName),
+				dv := libdv.NewDataVolume(
 					libdv.WithBlankImageSource(),
 					libdv.WithStorage(
 						libdv.StorageWithStorageClass(snapshotStorageClass),
-						libdv.StorageWithVolumeSize(quantity.String()),
 					),
 				)
-				libstorage.AddDataVolumeTemplate(vm, dataVolume)
-				vm.Spec.Template.Spec.Domain.Devices.Disks = append(vm.Spec.Template.Spec.Domain.Devices.Disks, v1.Disk{
-					Name: "blank",
-					DiskDevice: v1.DiskDevice{
-						Disk: &v1.DiskTarget{
-							Bus: v1.DiskBusVirtio,
-						},
-					},
-				})
-				vm.Spec.Template.Spec.Volumes = append(vm.Spec.Template.Spec.Volumes, v1.Volume{
-					Name: "blank",
-					VolumeSource: v1.VolumeSource{
-						DataVolume: &v1.DataVolumeSource{
-							Name: "dv-" + vm.Name,
-						},
-					},
-				})
+				vm, vmi := createAndStartVM(
+					libvmi.NewVirtualMachine(
+						libvmifact.NewAlpine(
+							libvmi.WithNamespace(testsuite.GetTestNamespace(nil)),
+							libnet.WithMasqueradeNetworking(),
+							libvmi.WithDataVolume("blank", dv.Name),
+						),
+						libvmi.WithDataVolumeTemplate(dv),
+					),
+				)
 
-				vm, vmi = createAndStartVM(vm)
 				libwait.WaitForSuccessfulVMIStart(vmi,
 					libwait.WithTimeout(300),
 				)
@@ -564,6 +529,52 @@ var _ = Describe(SIG("VirtualMachineSnapshot Tests", func() {
 					Expect(err).ToNot(HaveOccurred())
 					return updatedVMI.Status.FSFreezeStatus
 				}, 30*time.Second, 2*time.Second).Should(BeEmpty())
+			})
+
+			It("[test_id:12182] should succeed snapshot when VM is paused with Paused indication", func() {
+				dvName := "dv-" + rand.String(5)
+				quantity := resource.MustParse("1Gi")
+
+				opts := []libvmi.Option{
+					libnet.WithMasqueradeNetworking(),
+					libvmi.WithNamespace(testsuite.GetTestNamespace(nil)),
+					libvmi.WithDataVolume("blank", dvName),
+				}
+
+				vmi := libvmifact.NewFedora(opts...)
+				vm = libvmi.NewVirtualMachine(vmi)
+
+				dataVolume := libdv.NewDataVolume(
+					libdv.WithName(dvName),
+					libdv.WithBlankImageSource(),
+					libdv.WithStorage(
+						libdv.StorageWithStorageClass(snapshotStorageClass),
+						libdv.StorageWithVolumeSize(quantity.String()),
+					),
+				)
+				libstorage.AddDataVolumeTemplate(vm, dataVolume)
+
+				vm, vmi = createAndStartVM(vm)
+				libwait.WaitForSuccessfulVMIStart(vmi, libwait.WithTimeout(300))
+
+				Eventually(matcher.ThisVMI(vmi), 12*time.Minute, 2*time.Second).Should(matcher.HaveConditionTrue(v1.VirtualMachineInstanceAgentConnected))
+
+				By("Pausing the VirtualMachineInstance")
+				Expect(virtClient.VirtualMachineInstance(vmi.Namespace).Pause(context.Background(), vmi.Name, &v1.PauseOptions{})).To(Succeed())
+				Eventually(matcher.ThisVMI(vmi), 30*time.Second, 2*time.Second).Should(matcher.HaveConditionTrue(v1.VirtualMachineInstancePaused))
+
+				By("Taking the snapshot")
+				snapshot = libstorage.NewSnapshot(vm.Name, vm.Namespace)
+				_, err := virtClient.VirtualMachineSnapshot(snapshot.Namespace).Create(context.Background(), snapshot, metav1.CreateOptions{})
+				Expect(err).ToNot(HaveOccurred())
+				snapshot = libstorage.WaitSnapshotSucceeded(virtClient, vm.Namespace, snapshot.Name)
+
+				By("Verifying snapshot has Paused indication")
+				expectedIndications := []snapshotv1.Indication{snapshotv1.VMSnapshotOnlineSnapshotIndication, snapshotv1.VMSnapshotPausedIndication}
+				Expect(snapshot.Status.Indications).To(ContainElements(expectedIndications))
+
+				contentName := *snapshot.Status.VirtualMachineSnapshotContentName
+				checkOnlineSnapshotExpectedContentSource(vm, contentName, true)
 			})
 
 			DescribeTable("should succeed online snapshot with hot plug disk", func(withEphemeralHotplug bool) {
@@ -1189,7 +1200,7 @@ var _ = Describe(SIG("VirtualMachineSnapshot Tests", func() {
 					libvmi.WithNamespace(testsuite.GetTestNamespace(nil)),
 					libvmi.WithDataVolume("disk0", dv.Name),
 					libvmi.WithDataVolume("disk1", dv2.Name),
-					libvmi.WithResourceMemory("128Mi"),
+					libvmi.WithMemoryRequest("128Mi"),
 				),
 				libvmi.WithDataVolumeTemplate(dv2),
 				libvmi.WithRunStrategy(v1.RunStrategyHalted),
@@ -1305,7 +1316,7 @@ var _ = Describe(SIG("VirtualMachineSnapshot Tests", func() {
 				vmi := libvmi.New(
 					libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding()),
 					libvmi.WithNetwork(v1.DefaultPodNetwork()),
-					libvmi.WithResourceMemory(memory),
+					libvmi.WithMemoryRequest(memory),
 					libvmi.WithNamespace(testsuite.GetTestNamespace(nil)),
 					storageOptFun("disk0", dataVolume.Name),
 				)
@@ -1370,7 +1381,7 @@ var _ = Describe(SIG("VirtualMachineSnapshot Tests", func() {
 				vmi := libvmi.New(
 					libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding()),
 					libvmi.WithNetwork(v1.DefaultPodNetwork()),
-					libvmi.WithResourceMemory("128Mi"),
+					libvmi.WithMemoryRequest("128Mi"),
 					libvmi.WithNamespace(testsuite.GetTestNamespace(nil)),
 					libvmi.WithPersistentVolumeClaim("snapshotablevolume", includedDataVolume.Name),
 					libvmi.WithPersistentVolumeClaim("notsnapshotablevolume", excludedDataVolume.Name),
@@ -1419,7 +1430,7 @@ var _ = Describe(SIG("VirtualMachineSnapshot Tests", func() {
 				vmi := libvmi.New(
 					libvmi.WithInterface(libvmi.InterfaceDeviceWithMasqueradeBinding()),
 					libvmi.WithNetwork(v1.DefaultPodNetwork()),
-					libvmi.WithResourceMemory("128Mi"),
+					libvmi.WithMemoryRequest("128Mi"),
 					libvmi.WithNamespace(testsuite.GetTestNamespace(nil)),
 					libvmi.WithPersistentVolumeClaim("snapshotablevolume", includedDataVolume.Name),
 				)

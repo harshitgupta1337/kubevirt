@@ -31,14 +31,11 @@ case ${PLATFORM} in
 x86_64* | i?86_64* | amd64*)
     ARCH="amd64"
     ;;
-ppc64le)
-    ARCH="ppc64le"
-    ;;
 aarch64* | arm64*)
     ARCH="arm64"
     ;;
 *)
-    echo "invalid Arch, only support x86_64, ppc64le, aarch64"
+    echo "invalid Arch, only support x86_64 and aarch64"
     exit 1
     ;;
 esac
@@ -348,10 +345,8 @@ EOF
 
 function _setup_ipfamily() {
     if [ "$IPFAMILY" != "" ]; then
-        cat <<EOF >> ${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/kind.yaml
-networking:
-  ipFamily: $IPFAMILY
-EOF
+        IPFAMILY_REPLACE="networking:\n  ipFamily: $IPFAMILY"
+        sed -i "s/networking:/$IPFAMILY_REPLACE/" ${KUBEVIRTCI_CONFIG_PATH}/$KUBEVIRT_PROVIDER/kind.yaml
         echo "KIND cluster ip family has been set to $IPFAMILY"
     fi
 }

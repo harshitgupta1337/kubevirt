@@ -421,7 +421,7 @@ var _ = Describe(SIG("Live Migration", decorators.RequiresTwoSchedulableNodes, f
 			})
 		})
 		Context("with multiple VMIs with eviction policies set", Serial, func() {
-			It("[QUARANTINE][release-blocker][test_id:3245]should not migrate more than two VMIs at the same time from a node", decorators.Quarantine, func() {
+			It("[release-blocker][test_id:3245]should not migrate more than two VMIs at the same time from a node", func() {
 				var vmis []*v1.VirtualMachineInstance
 				for i := 0; i < 4; i++ {
 					vmi := alpineVMIWithEvictionStrategy()
@@ -579,7 +579,7 @@ var _ = Describe(SIG("Live Migration", decorators.RequiresTwoSchedulableNodes, f
 
 func fedoraVMIWithEvictionStrategy() *v1.VirtualMachineInstance {
 	return libvmifact.NewFedora(libnet.WithMasqueradeNetworking(),
-		libvmi.WithResourceMemory(fedoraVMSize),
+		libvmi.WithMemoryRequest(fedoraVMSize),
 		libvmi.WithEvictionStrategy(v1.EvictionStrategyLiveMigrate),
 		libvmi.WithNamespace(testsuite.GetTestNamespace(nil)))
 }

@@ -55,9 +55,12 @@ const (
 
 	MyPodIP = "MY_POD_IP"
 
-	noSourceStatusErrorMsg               = "must pass source status"
-	noTargetStatusErrorMsg               = "must pass target status"
-	unableToLocateVMIMigrationIDErrorMsg = "unable to locate VMI for migrationID %s"
+	noSourceStatusErrorMsg                        = "must pass source status"
+	noTargetStatusErrorMsg                        = "must pass target status"
+	sourceUnableToLocateVMIMigrationIDErrorMsg    = "source: unable to locate VMI for migrationID %s"
+	targetUnableToLocateVMIMigrationIDErrorMsg    = "target: unable to locate VMI for migrationID %s"
+	sourceUnableToLocateVMIMigrationIDErrorMsgVMI = "source: unable to locate VMI for migrationID %s, vmi: %s"
+	targetUnableToLocateVMIMigrationIDErrorMsgVMI = "target: unable to locate VMI for migrationID %s, vmi: %s"
 
 	successMessage = "success"
 
@@ -346,7 +349,7 @@ func (s *SynchronizationController) execute(key string) error {
 		return nil
 	} else {
 		// No migration found don't do anything
-		log.Log.Object(vmi).V(4).Info("no decentralized migration found for VMI")
+		log.Log.Object(vmi).V(4).Info("no active decentralized migration found for VMI")
 		return nil
 	}
 }
@@ -430,10 +433,6 @@ func (s *SynchronizationController) handleSourceState(vmi *virtv1.VirtualMachine
 		// No migration state, don't do anything
 		return nil
 	}
-	if migration.IsFinal() {
-		// Migration completed already, no need to synchronize anymore.
-		return nil
-	}
 
 	sourceState := vmi.Status.MigrationState.SourceState
 	if sourceState.SyncAddress == nil || *sourceState.SyncAddress == "" {
@@ -486,10 +485,6 @@ func (s *SynchronizationController) handleTargetState(vmi *virtv1.VirtualMachine
 	}
 	if vmi.Status.MigrationState.TargetState == nil || vmi.Status.MigrationState.SourceState == nil {
 		// No migration state, don't do anything
-		return nil
-	}
-	if migration.IsFinal() {
-		// Migration completed already, no need to synchronize anymore.
 		return nil
 	}
 
@@ -556,8 +551,17 @@ func (s *SynchronizationController) getMigrationForVMI(vmi *virtv1.VirtualMachin
 				return nil, fmt.Errorf("not a virtual machine instance migration")
 			}
 			if migration.Namespace == vmi.Namespace {
-				count++
-				res = migration
+				if migration.IsDecentralizedSource() {
+					if vmi.Status.MigrationState != nil && vmi.Status.MigrationState.SourceState != nil && migration.UID == vmi.Status.MigrationState.SourceState.MigrationUID {
+						count++
+						res = migration
+					}
+				} else if migration.IsDecentralizedTarget() {
+					if vmi.Status.MigrationState != nil && vmi.Status.MigrationState.TargetState != nil && migration.UID == vmi.Status.MigrationState.TargetState.MigrationUID {
+						count++
+						res = migration
+					}
+				}
 			}
 		}
 		if count > 1 {
@@ -750,18 +754,18 @@ func (s *SynchronizationController) SyncSourceMigrationStatus(ctx context.Contex
 	migration, err := s.findTargetMigrationFromMigrationID(request.MigrationID)
 	if migration == nil {
 		return &syncv1.VMIStatusResponse{
-			Message: fmt.Sprintf(unableToLocateVMIMigrationIDErrorMsg, request.MigrationID),
-		}, fmt.Errorf(unableToLocateVMIMigrationIDErrorMsg, request.MigrationID)
+			Message: fmt.Sprintf(sourceUnableToLocateVMIMigrationIDErrorMsg, request.MigrationID),
+		}, fmt.Errorf(sourceUnableToLocateVMIMigrationIDErrorMsg, request.MigrationID)
 	}
 	key := controller.NamespacedKey(migration.Namespace, migration.Spec.VMIName)
 	log.Log.Object(migration).V(5).Infof("looking up VMI %s", key)
 	obj, exists, err := s.vmiInformer.GetStore().GetByKey(key)
 	if err != nil || !exists {
 		if err == nil {
-			err = fmt.Errorf(unableToLocateVMIMigrationIDErrorMsg, request.MigrationID)
+			err = fmt.Errorf(sourceUnableToLocateVMIMigrationIDErrorMsgVMI, request.MigrationID, key)
 		}
 		return &syncv1.VMIStatusResponse{
-			Message: fmt.Sprintf(unableToLocateVMIMigrationIDErrorMsg, request.MigrationID),
+			Message: fmt.Sprintf(sourceUnableToLocateVMIMigrationIDErrorMsgVMI, request.MigrationID, key),
 		}, err
 	}
 	vmi := obj.(*virtv1.VirtualMachineInstance)
@@ -811,18 +815,18 @@ func (s *SynchronizationController) SyncTargetMigrationStatus(ctx context.Contex
 	migration, err := s.findSourceMigrationFromMigrationID(request.MigrationID)
 	if migration == nil {
 		return &syncv1.VMIStatusResponse{
-			Message: fmt.Sprintf(unableToLocateVMIMigrationIDErrorMsg, request.MigrationID),
-		}, fmt.Errorf(unableToLocateVMIMigrationIDErrorMsg, request.MigrationID)
+			Message: fmt.Sprintf(targetUnableToLocateVMIMigrationIDErrorMsg, request.MigrationID),
+		}, fmt.Errorf(targetUnableToLocateVMIMigrationIDErrorMsg, request.MigrationID)
 	}
 
 	key := controller.NamespacedKey(migration.Namespace, migration.Spec.VMIName)
 	obj, exists, err := s.vmiInformer.GetStore().GetByKey(key)
 	if err != nil || !exists {
 		if err == nil {
-			err = fmt.Errorf(unableToLocateVMIMigrationIDErrorMsg, request.MigrationID)
+			err = fmt.Errorf(targetUnableToLocateVMIMigrationIDErrorMsgVMI, request.MigrationID, key)
 		}
 		return &syncv1.VMIStatusResponse{
-			Message: fmt.Sprintf(unableToLocateVMIMigrationIDErrorMsg, request.MigrationID),
+			Message: fmt.Sprintf(targetUnableToLocateVMIMigrationIDErrorMsgVMI, request.MigrationID, key),
 		}, err
 	}
 	vmi := obj.(*virtv1.VirtualMachineInstance)
@@ -861,11 +865,11 @@ func (s *SynchronizationController) SyncTargetMigrationStatus(ctx context.Contex
 }
 
 func (s *SynchronizationController) patchVMI(ctx context.Context, origVMI, newVMI *virtv1.VirtualMachineInstance) error {
-	if origVMI.Status.MigrationState != nil && origVMI.Status.MigrationState.Completed {
+	if origVMI.Status.MigrationState != nil &&
+		origVMI.Status.MigrationState.Completed {
 		log.Log.Object(origVMI).V(3).Infof("VMI is completed, skipping patch")
 		return nil
 	}
-
 	patchSet := patch.New()
 
 	if !apiequality.Semantic.DeepEqual(origVMI.Labels, newVMI.Labels) {
@@ -915,12 +919,13 @@ func (s *SynchronizationController) patchVMI(ctx context.Context, origVMI, newVM
 			)
 		}
 	}
+
 	if !patchSet.IsEmpty() {
 		patchBytes, err := patchSet.GeneratePayload()
 		if err != nil {
 			return err
 		}
-		log.Log.Object(origVMI).V(3).Infof("patch VMI with %s", string(patchBytes))
+		log.Log.Object(origVMI).V(5).Infof("patch VMI with %s", string(patchBytes))
 		if _, err := s.client.VirtualMachineInstance(origVMI.Namespace).Patch(ctx, origVMI.Name, types.JSONPatchType, patchBytes, metav1.PatchOptions{}); err != nil {
 			return err
 		}
@@ -939,6 +944,9 @@ func indexByMigrationUID(obj interface{}) ([]string, error) {
 func indexByVmiName(obj interface{}) ([]string, error) {
 	migration, ok := obj.(*virtv1.VirtualMachineInstanceMigration)
 	if !ok {
+		return nil, nil
+	}
+	if migration.DeletionTimestamp != nil {
 		return nil, nil
 	}
 	return []string{migration.Spec.VMIName}, nil
@@ -1012,7 +1020,7 @@ func copyCommonLegacyFields(targetMigrationState, sourceMigrationState *virtv1.V
 		targetMigrationState.StartTimestamp = sourceMigrationState.StartTimestamp
 	}
 	if sourceMigrationState.EndTimestamp != nil {
-		targetMigrationState.EndTimestamp = sourceMigrationState.StartTimestamp
+		targetMigrationState.EndTimestamp = sourceMigrationState.EndTimestamp
 	}
 }
 

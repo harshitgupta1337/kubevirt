@@ -243,6 +243,8 @@ type VirtControllerApp struct {
 
 	// indicates if controllers were started with or without CDI/DataVolume support
 	hasCDI bool
+	// indicates if controllers were started with or without DRA support
+	isDRAEnabled bool
 	// the channel used to trigger re-initialization.
 	reInitChan chan string
 
@@ -347,6 +349,7 @@ func Execute() {
 
 	app.reInitChan = make(chan string, 10)
 	app.hasCDI = app.clusterConfig.HasDataVolumeAPI()
+	app.isDRAEnabled = app.clusterConfig.GPUsWithDRAGateEnabled() || app.clusterConfig.HostDevicesWithDRAEnabled()
 	app.clusterConfig.SetConfigModifiedCallback(app.configModificationCallback)
 	app.clusterConfig.SetConfigModifiedCallback(app.shouldChangeLogVerbosity)
 	app.clusterConfig.SetConfigModifiedCallback(app.shouldChangeRateLimiter)
@@ -365,8 +368,15 @@ func Execute() {
 
 	app.vmiInformer = app.informerFactory.VMI()
 	app.kvPodInformer = app.informerFactory.KubeVirtPod()
-	app.resourceClaimInformer = app.informerFactory.ResourceClaim()
-	app.resourceSliceInformer = app.informerFactory.ResourceSlice()
+	if app.isDRAEnabled {
+		app.resourceClaimInformer = app.informerFactory.ResourceClaim()
+		app.resourceSliceInformer = app.informerFactory.ResourceSlice()
+		log.Log.Infof("One of DRA FG detected, DRA integration enabled")
+	} else {
+		app.resourceClaimInformer = app.informerFactory.DummyResourceClaim()
+		app.resourceSliceInformer = app.informerFactory.DummyResourceSlice()
+		log.Log.Infof("No DRA FG detected, DRA integration disabled")
+	}
 	app.nodeInformer = app.informerFactory.KubeVirtNode()
 	app.namespaceStore = app.informerFactory.Namespace().GetStore()
 	app.namespaceInformer = app.informerFactory.Namespace()
@@ -441,20 +451,20 @@ func Execute() {
 
 	app.onOpenshift = onOpenShift
 
-	metricsInformers := &metrics.Informers{
-		VM:                    app.vmInformer,
-		VMI:                   app.vmiInformer,
-		PersistentVolumeClaim: app.persistentVolumeClaimInformer,
-		VMIMigration:          app.migrationInformer,
-		KVPod:                 app.kvPodInformer,
+	metricsInformers := &metrics.Indexers{
+		VMIMigration: app.migrationInformer.GetIndexer(),
+		KVPod:        app.kvPodInformer.GetIndexer(),
 	}
 
 	metricsStores := &metrics.Stores{
-		Instancetype:        app.instancetypeInformer.GetStore(),
-		ClusterInstancetype: app.clusterInstancetypeInformer.GetStore(),
-		Preference:          app.preferenceInformer.GetStore(),
-		ClusterPreference:   app.clusterPreferenceInformer.GetStore(),
-		ControllerRevision:  app.controllerRevisionInformer.GetStore(),
+		VM:                    app.vmInformer.GetStore(),
+		VMI:                   app.vmiInformer.GetStore(),
+		PersistentVolumeClaim: app.persistentVolumeClaimInformer.GetStore(),
+		Instancetype:          app.instancetypeInformer.GetStore(),
+		ClusterInstancetype:   app.clusterInstancetypeInformer.GetStore(),
+		Preference:            app.preferenceInformer.GetStore(),
+		ClusterPreference:     app.clusterPreferenceInformer.GetStore(),
+		ControllerRevision:    app.controllerRevisionInformer.GetStore(),
 	}
 
 	if err := metrics.SetupMetrics(
@@ -494,6 +504,17 @@ func (vca *VirtControllerApp) configModificationCallback() {
 			log.Log.Infof("Reinitialize virt-controller, cdi api has been removed")
 		}
 		vca.reInitChan <- "reinit"
+		return
+	}
+	newIsDRAEnabled := vca.clusterConfig.GPUsWithDRAGateEnabled() || vca.clusterConfig.HostDevicesWithDRAEnabled()
+	if newIsDRAEnabled != vca.isDRAEnabled {
+		if newIsDRAEnabled {
+			log.Log.Infof("Reinitialize virt-controller, DRA integration has been introduced")
+		} else {
+			log.Log.Infof("Reinitialize virt-controller, DRA integration has been removed")
+		}
+		vca.reInitChan <- "reinit"
+		return
 	}
 }
 
@@ -571,7 +592,7 @@ func (vca *VirtControllerApp) onStartedLeading() func(ctx context.Context) {
 
 		if vca.migrationInformer == nil {
 			vca.migrationInformer = vca.informerFactory.VirtualMachineInstanceMigration()
-			metrics.UpdateVMIMigrationInformer(vca.migrationInformer)
+			metrics.UpdateVMIMigrationInformer(vca.migrationInformer.GetIndexer())
 		}
 		golog.Printf("\nvca.migrationInformer :%v\n", vca.migrationInformer)
 
@@ -583,7 +604,7 @@ func (vca *VirtControllerApp) onStartedLeading() func(ctx context.Context) {
 		go vca.disruptionBudgetController.Run(vca.disruptionBudgetControllerThreads, stop)
 		go vca.nodeController.Run(vca.nodeControllerThreads, stop)
 		go vca.vmiController.Run(vca.vmiControllerThreads, stop)
-		if vca.clusterConfig.GPUsWithDRAGateEnabled() || vca.clusterConfig.HostDevicesWithDRAEnabled() {
+		if vca.isDRAEnabled {
 			go vca.draStatusController.Run(vca.draStatusControllerThreads, stop)
 		}
 		go vca.rsController.Run(vca.rsControllerThreads, stop)
@@ -689,7 +710,7 @@ func (vca *VirtControllerApp) initCommon() {
 		panic(err)
 	}
 
-	if vca.clusterConfig.GPUsWithDRAGateEnabled() || vca.clusterConfig.HostDevicesWithDRAEnabled() {
+	if vca.isDRAEnabled {
 		draStatusRecorder := vca.newRecorder(k8sv1.NamespaceAll, "dra-status-controller")
 		vca.draStatusController, err = dra.NewDRAStatusController(
 			vca.clusterConfig,
