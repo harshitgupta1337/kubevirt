@@ -174,7 +174,7 @@ func NewController(
 	podIsolationDetector isolation.PodIsolationDetector,
 	migrationProxy migrationproxy.ProxyManager,
 	downwardMetricsManager downwardMetricsManager,
-	capabilities *libvirtxml.Caps,
+	capabilities *libvirtxml.Caps, // TODO Replace this argument with just the topology
 	hostCpuModel string,
 	netConf netconf,
 	netStat netstat,

@@ -22,6 +22,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -83,6 +84,7 @@ import (
 	nodelabeller "kubevirt.io/kubevirt/pkg/virt-handler/node-labeller"
 	"kubevirt.io/kubevirt/pkg/virt-handler/rest"
 	"kubevirt.io/kubevirt/pkg/virt-handler/selinux"
+	virt_capabilities "kubevirt.io/kubevirt/pkg/virt-launcher/virt-capabilities"
 )
 
 const (
@@ -297,31 +299,30 @@ func (app *virtHandlerApp) Run() {
 
 	stop := make(chan struct{})
 	defer close(stop)
-	var capabilities libvirtxml.Caps
-	var hostCpuModel string
 
-	hostCapsFile, err := os.ReadFile(filepath.Join(nodelabeller.NodeLabellerVolumePath, "capabilities.xml"))
+	var virtCaps virt_capabilities.VirtualizationCapabilities
+	virtCapsFile, err := os.ReadFile(filepath.Join(nodelabeller.NodeLabellerVolumePath, "virtualization_capabilities.json"))
 	if err != nil {
 		panic(err)
 	}
-
-	if err := capabilities.Unmarshal(string(hostCapsFile)); err != nil {
+	if err := json.Unmarshal(virtCapsFile, &virtCaps); err != nil {
 		panic(err)
 	}
+
+	var capabilities libvirtxml.Caps // TODO This needs to be removed. No reference to libvirt Caps in virt-handler should be present.
 
 	nodeLabellerrecorder := broadcaster.NewRecorder(scheme.Scheme, k8sv1.EventSource{Component: "node-labeller", Host: app.HostOverride})
 	nodeLabellerController, err := nodelabeller.NewNodeLabeller(app.clusterConfig,
 		app.virtCli.CoreV1().Nodes(),
 		app.HostOverride,
 		nodeLabellerrecorder,
-		capabilities.Host.CPU.Counter,
-		capabilities.Guests,
+		virtCaps,
 	)
 	if err != nil {
 		panic(err)
 	}
 
-	hostCpuModel = nodeLabellerController.GetHostCpuModel().Name
+	hostCpuModel := virtCaps.HostCpuModelInfo.Name
 
 	go nodeLabellerController.Run(10, stop)
 
