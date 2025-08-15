@@ -57,11 +57,11 @@ go_binary(
 pkg_tar(
     name = "virt-launcher-tar",
     srcs = [
-        "node-labeller/node-labeller.sh",
         ":virt-launcher",
         "//cmd/container-disk-v2alpha:container-disk",
         "//cmd/virt-freezer",
         "//cmd/virt-launcher-monitor",
+        "//cmd/virt-launcher/node-labeller",
         "//cmd/virt-probe",
         "//cmd/virt-tail",
     ],
