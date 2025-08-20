@@ -63,16 +63,15 @@ var nodeLabellerLabels = []string{
 
 // NodeLabeller struct holds information needed to run node-labeller
 type NodeLabeller struct {
-	recorder       record.EventRecorder
-	nodeClient     k8scli.NodeInterface
-	host           string
-	logger         *log.FilteredLogger
-	clusterConfig  *virtconfig.ClusterConfig
-	hypervFeatures supportedFeatures // TODO This also needs to be a part of the VirtualizationCapabilities
-	queue          workqueue.TypedRateLimitingInterface[string]
-	volumePath     string
-	arch           archLabeller
-	virtCaps       virt_capabilities.VirtualizationCapabilities
+	recorder      record.EventRecorder
+	nodeClient    k8scli.NodeInterface
+	host          string
+	logger        *log.FilteredLogger
+	clusterConfig *virtconfig.ClusterConfig
+	queue         workqueue.TypedRateLimitingInterface[string]
+	volumePath    string
+	arch          archLabeller
+	virtCaps      virt_capabilities.VirtualizationCapabilities
 }
 
 func NewNodeLabeller(clusterConfig *virtconfig.ClusterConfig, nodeClient k8scli.NodeInterface, host string, recorder record.EventRecorder, virtCaps virt_capabilities.VirtualizationCapabilities) (*NodeLabeller, error) {
@@ -189,11 +188,6 @@ func (n *NodeLabeller) patchNode(originalNode, node *v1.Node) error {
 	return err
 }
 
-// TODO: Need to implement this in the Libvirt-QEMU-KVM virtualization capabilities exporter
-func (n *NodeLabeller) loadHypervFeatures() {
-	n.hypervFeatures.items = getCapLabels()
-}
-
 // prepareLabels converts cpu models, features, hyperv features to map[string]string format
 // e.g. "cpu-feature.node.kubevirt.io/Penryn": "true"
 func (n *NodeLabeller) prepareLabels(node *v1.Node) map[string]string {
@@ -219,7 +213,7 @@ func (n *NodeLabeller) prepareLabels(node *v1.Node) map[string]string {
 		newLabels[labelKey] = "true"
 	}
 
-	for _, key := range n.hypervFeatures.items {
+	for _, key := range n.virtCaps.HypervFeatures {
 		newLabels[kubevirtv1.HypervLabel+key] = "true"
 	}
 

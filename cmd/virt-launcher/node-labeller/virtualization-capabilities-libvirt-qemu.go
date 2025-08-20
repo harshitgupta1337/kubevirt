@@ -98,8 +98,7 @@ func (v *VirtualizationCapabilitiesLibvirtQemu) loadCapabilities() {
 
 // GetHypervFeatures returns a dummy list of Hyper-V features.
 func (v *VirtualizationCapabilitiesLibvirtQemu) GetHypervFeatures() []string {
-	// TODO Query actual Hyper-V features from /dev/kvm
-	return []string{"hv_relaxed", "hv_vapic"}
+	return getCapLabels()
 }
 
 // GetNodeTopology returns a dummy node topology.

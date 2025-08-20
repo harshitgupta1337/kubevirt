@@ -19,7 +19,7 @@
  *
  */
 
-package nodelabeller
+package main
 
 /*
 #include <linux/kvm.h>
@@ -56,8 +56,6 @@ import (
 	"unsafe"
 
 	"kubevirt.io/client-go/log"
-
-	util "kubevirt.io/kubevirt/pkg/virt-handler/node-labeller/util"
 )
 
 const (
@@ -68,6 +66,8 @@ const (
 	HV_X64_MSR_STIMER0_CONFIG          = 0x400000B0
 	HV_X64_MSR_TSC_FREQUENCY           = 0x40000022
 	HV_X64_MSR_REENLIGHTENMENT_CONTROL = 0x40000106
+
+	KVMPath = "/dev/kvm"
 )
 
 type capability struct {
@@ -222,7 +222,7 @@ func exposeCapabilities(fd uintptr, supportedMSRS map[uint32]bool) []string {
 }
 
 func getCapLabels() []string {
-	devkvm, err := os.OpenFile(util.KVMPath, syscall.O_RDWR|syscall.O_CLOEXEC, 0)
+	devkvm, err := os.OpenFile(KVMPath, syscall.O_RDWR|syscall.O_CLOEXEC, 0)
 	if err != nil {
 		log.DefaultLogger().Errorf("something happened during opening kvm file: " + err.Error())
 		return nil

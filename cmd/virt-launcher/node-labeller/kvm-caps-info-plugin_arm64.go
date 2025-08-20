@@ -19,7 +19,7 @@
  *
  */
 
-package nodelabeller
+package main
 
 func getCapLabels() []string {
 	exposedCaps := []string{}
