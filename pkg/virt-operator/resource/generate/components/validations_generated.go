@@ -6918,7 +6918,7 @@ var CRDsValidation map[string]string = map[string]string{
                               model:
                                 description: |-
                                   Interface model.
-                                  One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.
+                                  One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio, vmbus.
                                   Defaults to virtio.
                                 type: string
                               name:
@@ -13125,7 +13125,7 @@ var CRDsValidation map[string]string = map[string]string{
                       model:
                         description: |-
                           Interface model.
-                          One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.
+                          One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio, vmbus.
                           Defaults to virtio.
                         type: string
                       name:
@@ -17223,7 +17223,7 @@ var CRDsValidation map[string]string = map[string]string{
                       model:
                         description: |-
                           Interface model.
-                          One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.
+                          One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio, vmbus.
                           Defaults to virtio.
                         type: string
                       name:
@@ -19819,7 +19819,7 @@ var CRDsValidation map[string]string = map[string]string{
                               model:
                                 description: |-
                                   Interface model.
-                                  One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.
+                                  One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio, vmbus.
                                   Defaults to virtio.
                                 type: string
                               name:
@@ -24999,7 +24999,7 @@ var CRDsValidation map[string]string = map[string]string{
                                       model:
                                         description: |-
                                           Interface model.
-                                          One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.
+                                          One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio, vmbus.
                                           Defaults to virtio.
                                         type: string
                                       name:
@@ -30682,7 +30682,7 @@ var CRDsValidation map[string]string = map[string]string{
                                           model:
                                             description: |-
                                               Interface model.
-                                              One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.
+                                              One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio, vmbus.
                                               Defaults to virtio.
                                             type: string
                                           name:
