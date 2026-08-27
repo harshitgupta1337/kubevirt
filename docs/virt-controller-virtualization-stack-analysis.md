@@ -39,6 +39,8 @@ return typed backend requirements that core validates and merges into a pod.
 Core should retain final authority over security, ownership, orchestration,
 resource accounting, and scheduling policy.
 
+This means that the plugins should expose specific pieces of information needed to construct to `virt-launcher` pod.
+
 ## 2. Launcher pod construction call graph
 
 ```text
@@ -78,16 +80,16 @@ The common controlling renderer is
 | ID | Classification | Severity | Exact file and symbol | Assumption | Recommended disposition |
 | --- | --- | --- | --- | --- | --- |
 | F1 | Explicit current-stack dependency | Blocking | [`GetHypervisorFromKvConfig`](../pkg/virt-config/virt-config.go#L520-L539), [`NewTemplateService`](../pkg/virt-controller/services/template.go#L1406-L1441) | One stack and launcher image apply to the controller and cluster. | Generalize behind a core registry keyed by an immutable per-VMI stack ID. |
-| F2 | Explicit current-stack dependency | Blocking | [`TemplateService.renderLaunchManifest`](../pkg/virt-controller/services/template.go#L452-L500) | Every compute container runs `virt-launcher-monitor` with QEMU, Libvirt, OVMF, and hypervisor flags. | Delegate a typed launcher runtime specification to the selected stack plugin. |
-| F3 | Explicit current-stack dependency | Blocking | [`VolumeRenderer.Mounts` and `Volumes`](../pkg/virt-controller/services/rendervolumes.go#L69-L96) | Every launcher has Libvirt runtime and KubeVirt socket directories. | Keep core shared volumes; delegate backend-private volumes and mounts. |
+| F2 | Explicit current-stack dependency | Blocking | [`TemplateService.renderLaunchManifest`](../pkg/virt-controller/services/template.go#L452-L500) | Every compute container runs `virt-launcher-monitor` with QEMU, Libvirt, OVMF, and hypervisor flags. | Plugin returns structured set of launcher-container requirements; core validates them and constructs the final pod. |
+| F3 | Explicit current-stack dependency | Blocking | [`VolumeRenderer.Mounts` and `Volumes`](../pkg/virt-controller/services/rendervolumes.go#L69-L96) | Every launcher has Libvirt runtime and KubeVirt socket directories. | Keep core shared volumes; Plugin returns stack-specific volumes and mounts. |
 | F4 | Extension point for future backends | Blocking | [`LauncherHypervisorResources`](../pkg/hypervisor/launcherhypervisorresources.go#L30-L48) | The backend abstraction exposes only device name and memory overhead; unknown names become KVM. | Replace defaulting with explicit lookup and broaden the typed contribution contract. |
 | F5 | Explicit current-stack dependency | Significant | [`KvmHypervisorBackend.GetMemoryOverhead`](../pkg/hypervisor/kvm/hypervisorbackend.go#L62-L160) | The formula models Libvirt/QEMU processes and QEMU-specific memory behavior. | Delegate stack overhead calculation and return an explainable breakdown. |
-| F6 | Implicit stack-specific behavior | Significant | [`getRequiredResources`](../pkg/virt-controller/services/renderresources.go#L467-L486), [`VMIResourcePredicates`](../pkg/virt-controller/services/template.go#L1641-L1685) | Core assumes TUN, vhost-net, vhost-vsock, KVM/MSHV, SEV, TDX, and IOMMUFD resources. | Delegate backend resource mapping while core retains generic VMI and Kubernetes resource policy. |
-| F7 | Implicit stack-specific behavior | Significant | [`newNodeSelectorRenderer`](../pkg/virt-controller/services/template.go#L795-L859), [`NodeSelectorRenderer.Render`](../pkg/virt-controller/services/nodeselectorrenderer.go#L54-L96) | Core knows fixed CPU model, machine type, Hyper-V/KVM, SEV, TDX, and TSC labels. | Plugins return named capabilities; trusted core code maps them to node-labeler labels. |
+| F6 | Implicit stack-specific behavior | Significant | [`getRequiredResources`](../pkg/virt-controller/services/renderresources.go#L467-L486), [`VMIResourcePredicates`](../pkg/virt-controller/services/template.go#L1641-L1685) | Core assumes TUN, vhost-net, vhost-vsock, KVM/MSHV, SEV, TDX, and IOMMUFD resources. | VMI Resource Predicates are just launcher spec modification rules that execute one after the other. We can query plugin for specific devices, etc. and construct list of renderers. ASSUMPTION: No arbitrary mod of launcher spec. |
+| F7 | Implicit stack-specific behavior | Significant | [`newNodeSelectorRenderer`](../pkg/virt-controller/services/template.go#L795-L859), [`NodeSelectorRenderer.Render`](../pkg/virt-controller/services/nodeselectorrenderer.go#L54-L96) | Core knows fixed CPU model, machine type, Hyper-V/KVM, SEV, TDX, and TSC labels. | Plugin should return a set of stack-specific labels that need to be added to launcher pod. |
 | F8 | Implicit stack-specific behavior | Significant | [`computePodSecurityContext`](../pkg/virt-controller/services/template.go#L374-L393), [`requiredCapabilities`](../pkg/virt-controller/services/rendercontainer.go#L292-L303) | Launcher UID 107, capabilities, seccomp, SELinux, and runtime class are globally shaped. | Plugin declares requirements; core validates and applies final policy. |
-| F9 | Explicit current-stack dependency | Significant | [`updateReadinessProbe` and `updateLivenessProbe`](../pkg/virt-controller/services/rendercontainer.go#L245-L286) | Probes use `virt-probe`, a `virtwrap/api` domain key, and a fixed Libvirt startup delay. | Define a stack-neutral launcher health ABI or delegate a bounded probe adapter. |
+| F9 | Explicit current-stack dependency | Significant | [`updateReadinessProbe` and `updateLivenessProbe`](../pkg/virt-controller/services/rendercontainer.go#L245-L286) | Probes use `virt-probe`, a `virtwrap/api` domain key, and a fixed Libvirt startup delay. | Define a stack-neutral launcher health RPC call (In Command API?) or delegate a bounded probe adapter. |
 | F10 | Explicit current-stack dependency | Blocking for migration | [`generatePodAnnotations`](../pkg/virt-controller/services/template.go#L1548-L1564), [`prepareMigrationTarget`](../pkg/virt-launcher/virtwrap/live-migration-target.go#L160-L265) | Every pod advertises Unix migration while launcher migration converts to Libvirt `api.Domain` and uses Libvirt ports and sockets. | Keep migration orchestration in core; delegate backend migration mechanics and capabilities. |
-| F11 | Explicit current-stack dependency | Significant | [`withBackendStorage`](../pkg/virt-controller/services/rendervolumes.go#L387-L445), [`withHugepages`](../pkg/virt-controller/services/rendervolumes.go#L500-L530) | Persistent TPM, NVRAM, and hugepages use Libvirt/QEMU directory layouts. | Delegate backend runtime paths and persistent-state layout. |
+| F11 | Explicit current-stack dependency | Significant | [`withBackendStorage`](../pkg/virt-controller/services/rendervolumes.go#L387-L445), [`withHugepages`](../pkg/virt-controller/services/rendervolumes.go#L500-L530) | Persistent TPM, NVRAM, and hugepages use Libvirt/QEMU directory layouts. | Plugin provides stack-specific runtime paths and persistent-state layout. IMPORTANT: Plugin does not allow arbitrary pod mods. It just provides values to virt-controller for certain fixed fields.|
 | F12 | Extension point for future backends | Minor | [`SidecarCreatorFunc`](../pkg/virt-controller/services/sidecar.go#L26-L35), renderer options | Existing options compose pod fragments but are in-process, startup-registered, and not a stack-selection contract. | Reuse their internal composition patterns, not the APIs as an unrestricted plugin boundary. |
 
 ### Observed MSHV pod: backend selection inside a Libvirt/QEMU launcher
@@ -293,7 +295,7 @@ different monitors, firmware handling, startup lifecycles, and configuration
 mechanisms.
 
 **Recommended disposition:** delegate a typed image, entrypoint, arguments,
-environment requirements, and launcher ABI version. Core should reject unknown
+environment requirements in the Plugin API. Core should reject unknown
 or unsafe fields.
 
 **Confidence:** High.
