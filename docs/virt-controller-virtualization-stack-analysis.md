@@ -89,7 +89,7 @@ The common controlling renderer is
 | F8 | Implicit stack-specific behavior | Significant | [`computePodSecurityContext`](../pkg/virt-controller/services/template.go#L374-L393), [`requiredCapabilities`](../pkg/virt-controller/services/rendercontainer.go#L292-L303) | Launcher UID 107, capabilities, seccomp, SELinux, and runtime class are globally shaped. | Plugin declares requirements; core validates and applies final policy. |
 | F9 | Explicit current-stack dependency | Significant | [`updateReadinessProbe` and `updateLivenessProbe`](../pkg/virt-controller/services/rendercontainer.go#L245-L286) | Probes use `virt-probe`, a `virtwrap/api` domain key, and a fixed Libvirt startup delay. | Define a stack-neutral launcher health RPC call (In Command API?) or delegate a bounded probe adapter. |
 | F10 | Explicit current-stack dependency | Blocking for migration | [`generatePodAnnotations`](../pkg/virt-controller/services/template.go#L1548-L1564), [`prepareMigrationTarget`](../pkg/virt-launcher/virtwrap/live-migration-target.go#L160-L265) | Every pod advertises Unix migration while launcher migration converts to Libvirt `api.Domain` and uses Libvirt ports and sockets. | Keep migration orchestration in core; delegate backend migration mechanics and capabilities. |
-| F11 | Explicit current-stack dependency | Significant | [`withBackendStorage`](../pkg/virt-controller/services/rendervolumes.go#L387-L445), [`withHugepages`](../pkg/virt-controller/services/rendervolumes.go#L500-L530) | Persistent TPM, NVRAM, and hugepages use Libvirt/QEMU directory layouts. | Plugin provides stack-specific runtime paths and persistent-state layout. IMPORTANT: Plugin does not allow arbitrary pod mods. It just provides values to virt-controller for certain fixed fields.|
+| F11 | Explicit current-stack dependency | Significant | [`withBackendStorage`](../pkg/virt-controller/services/rendervolumes.go#L387-L445), [`withHugepages`](../pkg/virt-controller/services/rendervolumes.go#L500-L530) | Persistent TPM, NVRAM, and hugepages use Libvirt/QEMU directory layouts. | Plugin provides stack-specific runtime paths and persistent-state layout. IMPORTANT: Plugin does not allow arbitrary pod mods. It just provides values to virt-controller for certain fixed fields. |
 | F12 | Extension point for future backends | Minor | [`SidecarCreatorFunc`](../pkg/virt-controller/services/sidecar.go#L26-L35), renderer options | Existing options compose pod fragments but are in-process, startup-registered, and not a stack-selection contract. | Reuse their internal composition patterns, not the APIs as an unrestricted plugin boundary. |
 
 ### Observed MSHV pod: backend selection inside a Libvirt/QEMU launcher
@@ -693,6 +693,67 @@ silently fall back to KVM.
 6. Separately define stack-neutral `virt-handler` and launcher lifecycle and
    migration interfaces. Pod rendering alone will not provide a functional
    second stack.
+
+## 11. Proposed launcher pod construction steps
+
+```text
+1. Resolve the stack for the VMI
+  Core provides: VMI, architecture, operation (launch or migration target),
+            cluster policy, and selected stack ID.
+  Plugin provides: supported stack capabilities and compatibility result.
+
+2. Calculate resources
+  Core provides: guest CPU/memory, hugepages, devices, network/storage facts,
+            and resource policy.
+  Plugin provides: stack-owned memory overhead and backend device resources
+              (for example devices.kubevirt.io/kvm or mshv).
+  Core produces: final compute-container requests and limits.
+
+3. Define the launcher runtime
+  Plugin provides: launcher image, entrypoint, bounded arguments and
+              environment, firmware/runtime artifacts, and image policy.
+  Core adds: VMI identity, lifecycle arguments, logging policy, and validated
+          cluster feature settings.
+
+4. Render storage and runtime paths
+  Core provides: resolved PVCs, DataVolumes, container disks, access
+            credentials, hotplug storage, and shared core directories.
+  Plugin provides: stack-private volumes, mounts, volume devices, socket
+              paths, hugepage paths, and persistent-state paths.
+
+5. Render auxiliary containers
+  Core provides: approved hook, network, container-disk, and storage helpers.
+  Plugin provides: required stack-specific init or helper containers and
+              their resource requirements.
+
+6. Define health and lifecycle integration
+  Plugin provides: supported stack-neutral health checks, startup timing, and
+              migration transport capabilities.
+  Core produces: readiness/liveness probes, readiness gates, termination
+            behavior, and migration annotations.
+
+7. Apply security requirements
+  Plugin provides: required UID/GID constraints, Linux devices, capabilities,
+              seccomp features, and SELinux needs.
+  Core validates: allowlists and Pod Security policy, then produces the final
+             pod and container security contexts.
+
+8. Apply scheduling requirements
+  Plugin provides: named node capabilities required by the selected stack and
+              VMI, not unrestricted selectors.
+  Core produces: node selectors and affinity by combining node-labeler
+            capability mappings with user and cluster scheduling policy.
+
+9. Assemble and validate the PodSpec
+  Core owns: metadata, owner references, service account, image-pull secrets,
+          DNS, restart policy, tolerations, topology constraints, final
+          containers, volumes, resources, security, and scheduling.
+  Core action: reject invalid plugin output; never silently fall back to a
+           different stack; create the virt-launcher pod.
+```
+
+The plugin returns typed requirements at these stages, not an arbitrary `Pod`
+or `PodSpec`. Core remains the sole owner of validation and final pod assembly.
 
 ---
 
