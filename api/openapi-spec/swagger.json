@@ -14929,7 +14929,7 @@
     "type": "object",
     "properties": {
      "bus": {
-      "description": "Bus indicates the type of disk device to emulate. supported values: virtio, sata, scsi, usb.",
+      "description": "Bus indicates the type of disk device to emulate. supported values: virtio, sata, scsi, usb, vmbus.",
       "type": "string"
      },
      "pciAddress": {
@@ -15752,7 +15752,7 @@
       "$ref": "#/definitions/v1.InterfaceMasquerade"
      },
      "model": {
-      "description": "Interface model. One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio. Defaults to virtio.",
+      "description": "Interface model. One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio, vmbus. Defaults to virtio.",
       "type": "string"
      },
      "name": {
