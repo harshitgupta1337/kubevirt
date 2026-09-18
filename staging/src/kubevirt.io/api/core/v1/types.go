@@ -1289,6 +1289,7 @@ const (
 	SupportedMachineTypeLabel = "machine-type.node.kubevirt.io/"
 
 	VirtIO = "virtio"
+	VMBus  = "vmbus"
 
 	// This label represents the host model CPU name
 	HostModelCPULabel = "host-model-cpu.node.kubevirt.io/"

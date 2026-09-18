@@ -29,6 +29,7 @@ HYPERVISOR_DEV_PATH="/dev/${HYPERVISOR_DEVICE}"
 HYPERVISOR_DEV_MINOR=$(grep -w ${HYPERVISOR_DEVICE} /proc/misc | cut -f 1 -d' ')
 set -o pipefail
 
+# OpenVMM uses MSHV, but node-labeller probes must use unaccelerated QEMU.
 VIRTTYPE=qemu
 
 if [ ! -e "$HYPERVISOR_DEV_PATH" ] && [ -n "$HYPERVISOR_DEV_MINOR" ]; then
@@ -37,7 +38,6 @@ fi
 
 if [ -e "$HYPERVISOR_DEV_PATH" ]; then
     chmod o+rw "$HYPERVISOR_DEV_PATH"
-    VIRTTYPE=${PREFERRED_VIRTTYPE}
 fi
 
 if [ -e /dev/sev ]; then

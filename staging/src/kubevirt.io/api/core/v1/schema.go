@@ -838,12 +838,13 @@ const (
 	DiskBusSCSI   DiskBus = "scsi"
 	DiskBusSATA   DiskBus = "sata"
 	DiskBusVirtio DiskBus = VirtIO
+	DiskBusVMBus  DiskBus = "vmbus"
 	DiskBusUSB    DiskBus = "usb"
 )
 
 type DiskTarget struct {
 	// Bus indicates the type of disk device to emulate.
-	// supported values: virtio, sata, scsi, usb.
+	// supported values: virtio, sata, scsi, usb, vmbus.
 	Bus DiskBus `json:"bus,omitempty"`
 	// ReadOnly.
 	// Defaults to false.
@@ -1444,7 +1445,7 @@ type Interface struct {
 	// Must match the Name of a Network.
 	Name string `json:"name"`
 	// Interface model.
-	// One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.
+	// One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio, vmbus.
 	// Defaults to virtio.
 	// TODO:(ihar) switch to enums once opengen-api supports them. See: https://github.com/kubernetes/kube-openapi/issues/51
 	Model string `json:"model,omitempty"`
