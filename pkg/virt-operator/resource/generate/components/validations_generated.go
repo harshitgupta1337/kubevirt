@@ -6630,7 +6630,7 @@ var CRDsValidation map[string]string = map[string]string{
                                   bus:
                                     description: |-
                                       Bus indicates the type of disk device to emulate.
-                                      supported values: virtio, sata, scsi, usb.
+                                      supported values: virtio, sata, scsi, usb, vmbus.
                                     type: string
                                   pciAddress:
                                     description: 'If specified, the virtual disk will
@@ -6918,7 +6918,7 @@ var CRDsValidation map[string]string = map[string]string{
                               model:
                                 description: |-
                                   Interface model.
-                                  One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.
+                                  One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio, vmbus.
                                   Defaults to virtio.
                                 type: string
                               name:
@@ -9240,7 +9240,7 @@ var CRDsValidation map[string]string = map[string]string{
                           bus:
                             description: |-
                               Bus indicates the type of disk device to emulate.
-                              supported values: virtio, sata, scsi, usb.
+                              supported values: virtio, sata, scsi, usb, vmbus.
                             type: string
                           pciAddress:
                             description: 'If specified, the virtual disk will be placed
@@ -12840,7 +12840,7 @@ var CRDsValidation map[string]string = map[string]string{
                           bus:
                             description: |-
                               Bus indicates the type of disk device to emulate.
-                              supported values: virtio, sata, scsi, usb.
+                              supported values: virtio, sata, scsi, usb, vmbus.
                             type: string
                           pciAddress:
                             description: 'If specified, the virtual disk will be placed
@@ -13125,7 +13125,7 @@ var CRDsValidation map[string]string = map[string]string{
                       model:
                         description: |-
                           Interface model.
-                          One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.
+                          One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio, vmbus.
                           Defaults to virtio.
                         type: string
                       name:
@@ -16938,7 +16938,7 @@ var CRDsValidation map[string]string = map[string]string{
                           bus:
                             description: |-
                               Bus indicates the type of disk device to emulate.
-                              supported values: virtio, sata, scsi, usb.
+                              supported values: virtio, sata, scsi, usb, vmbus.
                             type: string
                           pciAddress:
                             description: 'If specified, the virtual disk will be placed
@@ -17223,7 +17223,7 @@ var CRDsValidation map[string]string = map[string]string{
                       model:
                         description: |-
                           Interface model.
-                          One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.
+                          One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio, vmbus.
                           Defaults to virtio.
                         type: string
                       name:
@@ -19531,7 +19531,7 @@ var CRDsValidation map[string]string = map[string]string{
                                   bus:
                                     description: |-
                                       Bus indicates the type of disk device to emulate.
-                                      supported values: virtio, sata, scsi, usb.
+                                      supported values: virtio, sata, scsi, usb, vmbus.
                                     type: string
                                   pciAddress:
                                     description: 'If specified, the virtual disk will
@@ -19819,7 +19819,7 @@ var CRDsValidation map[string]string = map[string]string{
                               model:
                                 description: |-
                                   Interface model.
-                                  One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.
+                                  One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio, vmbus.
                                   Defaults to virtio.
                                 type: string
                               name:
@@ -24701,7 +24701,7 @@ var CRDsValidation map[string]string = map[string]string{
                                           bus:
                                             description: |-
                                               Bus indicates the type of disk device to emulate.
-                                              supported values: virtio, sata, scsi, usb.
+                                              supported values: virtio, sata, scsi, usb, vmbus.
                                             type: string
                                           pciAddress:
                                             description: 'If specified, the virtual
@@ -24999,7 +24999,7 @@ var CRDsValidation map[string]string = map[string]string{
                                       model:
                                         description: |-
                                           Interface model.
-                                          One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.
+                                          One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio, vmbus.
                                           Defaults to virtio.
                                         type: string
                                       name:
@@ -30378,7 +30378,7 @@ var CRDsValidation map[string]string = map[string]string{
                                               bus:
                                                 description: |-
                                                   Bus indicates the type of disk device to emulate.
-                                                  supported values: virtio, sata, scsi, usb.
+                                                  supported values: virtio, sata, scsi, usb, vmbus.
                                                 type: string
                                               pciAddress:
                                                 description: 'If specified, the virtual
@@ -30682,7 +30682,7 @@ var CRDsValidation map[string]string = map[string]string{
                                           model:
                                             description: |-
                                               Interface model.
-                                              One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio.
+                                              One of: e1000, e1000e, igb, ne2k_pci, pcnet, rtl8139, virtio, vmbus.
                                               Defaults to virtio.
                                             type: string
                                           name:
@@ -33067,7 +33067,7 @@ var CRDsValidation map[string]string = map[string]string{
                                       bus:
                                         description: |-
                                           Bus indicates the type of disk device to emulate.
-                                          supported values: virtio, sata, scsi, usb.
+                                          supported values: virtio, sata, scsi, usb, vmbus.
                                         type: string
                                       pciAddress:
                                         description: 'If specified, the virtual disk
