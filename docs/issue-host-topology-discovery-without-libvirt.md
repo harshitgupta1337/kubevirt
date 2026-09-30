@@ -84,7 +84,8 @@ explicit for follow-up work.
 
 ## Proposed design
 
-Introduce a small host-topology provider owned by `virt-handler`:
+Introduce a small host-topology provider in
+`pkg/virt-handler/host-topology`, owned by `virt-handler`:
 
 ```go
 type HostTopologyProvider interface {
@@ -126,14 +127,15 @@ callers may mutate the value.
 ## Implementation plan
 
 1. **Define topology semantics and fixtures**
-   - Document which fields are required and which are optional.
+   - Define the provider contract and document which fields are required and
+     which are optional under `pkg/virt-handler/host-topology`.
    - Add sysfs/procfs fixtures for one-node, multi-node, SMT, sparse-ID,
      offline-CPU, and missing-optional-data hosts.
    - Capture representative `virsh capabilities` output for parity tests.
 
 2. **Add direct host discovery**
-   - Add a provider under `pkg/virt-handler` or `pkg/virt-handler/node-labeller`
-     with injectable sysfs/procfs roots.
+   - Implement the provider under `pkg/virt-handler/host-topology` with
+     injectable sysfs/procfs roots.
    - Reuse `hardware.ParseCPUSetLine` rather than adding another CPU-list parser.
    - Return deterministic ordering for cells, CPUs, siblings, and distances.
 
