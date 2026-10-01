@@ -280,7 +280,8 @@ var _ = Describe("Template", func() {
 
 				compute := pod.Spec.Containers[0]
 				Expect(compute.Name).To(Equal("compute"))
-				Expect(compute.Image).To(Equal("kubevirt/virt-launcher"))
+				Expect(compute.Image).To(BeEmpty())
+				Expect(compute.ImagePullPolicy).To(BeEmpty())
 				Expect(compute.Command).To(BeEmpty())
 				Expect(compute.Args).To(BeEmpty())
 				Expect(compute.Resources.Requests).To(HaveKey(k8sv1.ResourceCPU))

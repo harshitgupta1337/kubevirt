@@ -478,6 +478,8 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, d
 
 	addLibvirtRuntime(pod)
 	compute := &pod.Spec.Containers[0]
+	compute.Image = t.launcherImage
+	compute.ImagePullPolicy = t.clusterConfig.GetImagePullPolicy()
 	resourceRenderer, memoryOverhead := t.newVirtStackResourceRenderer(vmi, compute.Resources, data.resourcePolicy)
 	compute.Resources = resourceRenderer.ResourceRequirements()
 
@@ -670,7 +672,7 @@ func (t *TemplateService) renderBaseLauncherManifest(vmi *v1.VirtualMachineInsta
 	}
 
 	resourceRenderer := t.newBaseResourceRenderer(vmi, data.resourcePolicy)
-	compute := t.newContainerSpecRenderer(vmi, volumeRenderer, resourceRenderer.ResourceRequirements(), userId).Render()
+	compute := newComputeContainerSkeleton(vmi, volumeRenderer, resourceRenderer.ResourceRequirements(), userId)
 	compute.Env = append(compute.Env, k8sv1.EnvVar{
 		Name: envVarPodName,
 		ValueFrom: &k8sv1.EnvVarSource{
@@ -1068,7 +1070,7 @@ func (t *TemplateService) newInitContainerRenderer(vmiSpec *v1.VirtualMachineIns
 	return NewContainerSpecRenderer(containerDisk, t.launcherImage, t.clusterConfig.GetImagePullPolicy(), cpInitContainerOpts...)
 }
 
-func (t *TemplateService) newContainerSpecRenderer(vmi *v1.VirtualMachineInstance, volumeRenderer *VolumeRenderer, resources k8sv1.ResourceRequirements, userId int64, extraOpts ...Option) *ContainerSpecRenderer {
+func newComputeContainerSkeleton(vmi *v1.VirtualMachineInstance, volumeRenderer *VolumeRenderer, resources k8sv1.ResourceRequirements, userId int64) k8sv1.Container {
 	computeContainerOpts := []Option{
 		WithVolumeDevices(volumeRenderer.VolumeDevices()...),
 		WithVolumeMounts(volumeRenderer.BaseMounts()...),
@@ -1089,12 +1091,8 @@ func (t *TemplateService) newContainerSpecRenderer(vmi *v1.VirtualMachineInstanc
 		computeContainerOpts = append(computeContainerOpts, WithLivelinessProbe(vmi))
 	}
 
-	computeContainerOpts = append(computeContainerOpts, extraOpts...)
-
 	const computeContainerName = "compute"
-	containerRenderer := NewContainerSpecRenderer(
-		computeContainerName, t.launcherImage, t.clusterConfig.GetImagePullPolicy(), computeContainerOpts...)
-	return containerRenderer
+	return NewContainerSpecRenderer(computeContainerName, "", "", computeContainerOpts...).Render()
 }
 
 func (t *TemplateService) newVolumeRenderer(vmi *v1.VirtualMachineInstance, imageIDs map[string]string, namespace string, requestedHookSidecarList hooks.HookSidecarList, backendStoragePVCName string, pvcStore cache.Store) (*VolumeRenderer, error) {
