@@ -454,7 +454,7 @@ func calcVCPUs(cpu *v1.CPU) int64 {
 	return int64(1)
 }
 
-func getRequiredResources(vmi *v1.VirtualMachineInstance, hypervisorResource k8sv1.ResourceName, allowEmulation bool) k8sv1.ResourceList {
+func getBaseRequiredResources(vmi *v1.VirtualMachineInstance, allowEmulation bool) k8sv1.ResourceList {
 	res := k8sv1.ResourceList{}
 	if netvmispec.RequiresTunDevice(vmi) {
 		res[TunDevice] = resource.MustParse("1")
@@ -466,13 +466,19 @@ func getRequiredResources(vmi *v1.VirtualMachineInstance, hypervisorResource k8s
 		// to use QEMU userland NIC emulation.
 		res[VhostNetDevice] = resource.MustParse("1")
 	}
-	if !allowEmulation {
-		res[hypervisorResource] = resource.MustParse("1")
-	}
 	if util.IsAutoAttachVSOCK(vmi) {
 		res[VhostVsockDevice] = resource.MustParse("1")
 	}
 	return res
+}
+
+func getHypervisorRequiredResources(hypervisorResource k8sv1.ResourceName, allowEmulation bool) k8sv1.ResourceList {
+	if allowEmulation {
+		return k8sv1.ResourceList{}
+	}
+	return k8sv1.ResourceList{
+		hypervisorResource: resource.MustParse("1"),
+	}
 }
 
 func WithVirtualizationResources(virtResources k8sv1.ResourceList) ResourceRendererOption {

@@ -419,8 +419,7 @@ func (t *TemplateService) RenderLaunchManifestNoVm(vmi *v1.VirtualMachineInstanc
 	if err != nil {
 		return nil, err
 	}
-	memoryOverhead := CalculateMemoryOverhead(t.clusterConfig, vmi, t.launcherHypervisorResources, t.memoryOverheadCalculators...)
-	return t.renderLaunchManifest(vmi, data, true, memoryOverhead)
+	return t.renderLaunchManifest(vmi, data, true)
 }
 
 func (t *TemplateService) RenderMigrationManifest(vmi *v1.VirtualMachineInstance, migration *v1.VirtualMachineInstanceMigration, sourcePod *k8sv1.Pod) (*k8sv1.Pod, error) {
@@ -428,8 +427,7 @@ func (t *TemplateService) RenderMigrationManifest(vmi *v1.VirtualMachineInstance
 	if err != nil {
 		return nil, err
 	}
-	memoryOverhead := CalculateMemoryOverhead(t.clusterConfig, vmi, t.launcherHypervisorResources, t.memoryOverheadCalculators...)
-	targetPod, err := t.renderLaunchManifest(vmi, data, false, memoryOverhead)
+	targetPod, err := t.renderLaunchManifest(vmi, data, false)
 	if err != nil {
 		return nil, err
 	}
@@ -442,8 +440,7 @@ func (t *TemplateService) RenderLaunchManifest(vmi *v1.VirtualMachineInstance) (
 	if err != nil {
 		return nil, err
 	}
-	memoryOverhead := CalculateMemoryOverhead(t.clusterConfig, vmi, t.launcherHypervisorResources, t.memoryOverheadCalculators...)
-	return t.renderLaunchManifest(vmi, data, false, memoryOverhead)
+	return t.renderLaunchManifest(vmi, data, false)
 }
 
 func generateQemuTimeoutWithJitter(qemuTimeoutBaseSeconds int) string {
@@ -473,7 +470,7 @@ func computePodSecurityContext(vmi *v1.VirtualMachineInstance, seccomp *k8sv1.Se
 	return psc
 }
 
-func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, data *launcherManifestPreRenderData, tempPod bool, memoryOverhead resource.Quantity) (*k8sv1.Pod, error) {
+func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, data *launcherManifestPreRenderData, tempPod bool) (*k8sv1.Pod, error) {
 	pod, err := t.renderBaseLauncherManifest(vmi, data, tempPod)
 	if err != nil {
 		return nil, err
@@ -481,10 +478,7 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, d
 
 	addLibvirtRuntime(pod)
 	compute := &pod.Spec.Containers[0]
-	resourceRenderer, err := t.newResourceRenderer(vmi, memoryOverhead, data.resourcePolicy)
-	if err != nil {
-		return nil, err
-	}
+	resourceRenderer, memoryOverhead := t.newVirtStackResourceRenderer(vmi, compute.Resources, data.resourcePolicy)
 	compute.Resources = resourceRenderer.ResourceRequirements()
 
 	domain := precond.MustNotBeEmpty(vmi.GetObjectMeta().GetName())
@@ -675,7 +669,8 @@ func (t *TemplateService) renderBaseLauncherManifest(vmi *v1.VirtualMachineInsta
 		return nil, err
 	}
 
-	compute := t.newContainerSpecRenderer(vmi, volumeRenderer, k8sv1.ResourceRequirements{}, userId).Render()
+	resourceRenderer := t.newBaseResourceRenderer(vmi, data.resourcePolicy)
+	compute := t.newContainerSpecRenderer(vmi, volumeRenderer, resourceRenderer.ResourceRequirements(), userId).Render()
 	compute.Env = append(compute.Env, k8sv1.EnvVar{
 		Name: envVarPodName,
 		ValueFrom: &k8sv1.EnvVarSource{
@@ -1158,19 +1153,26 @@ func (t *TemplateService) newVolumeRenderer(vmi *v1.VirtualMachineInstance, imag
 	return volumeRenderer, nil
 }
 
-// VIRT-PLUGIN-BREAKUP: This function has functionality that is both specific to virt-stack and generic.
-// For example, hypevisorResource is specific to the virt-stack.
-func (t *TemplateService) newResourceRenderer(vmi *v1.VirtualMachineInstance, memoryOverhead resource.Quantity, resourcePolicy launcherManifestResourcePolicy) (*ResourceRenderer, error) {
+func (t *TemplateService) newBaseResourceRenderer(vmi *v1.VirtualMachineInstance, resourcePolicy launcherManifestResourcePolicy) *ResourceRenderer {
 	vmiResources := vmi.Spec.Domain.Resources
-	hypervisorResource := ConstructHypervisorResourceName(t.launcherHypervisorResources)
 	baseOptions := []ResourceRendererOption{
 		WithEphemeralStorageRequest(),
-		// VIRT-PLUGIN-BREAKUP: Even under getRequiredResources, the hypervisor device only is virt-stack specific. Rest of the devices are generic.
-		WithVirtualizationResources(getRequiredResources(vmi, hypervisorResource, t.clusterConfig.AllowEmulation())),
+		WithVirtualizationResources(getBaseRequiredResources(vmi, t.clusterConfig.AllowEmulation())),
 	}
+	options := append(baseOptions, t.vmiBaseResourcePredicates(vmi, resourcePolicy).Apply()...)
+	return NewResourceRenderer(vmiResources.Limits, vmiResources.Requests, options...)
+}
 
-	options := append(baseOptions, t.VMIResourcePredicates(vmi, memoryOverhead, resourcePolicy).Apply()...)
-	return NewResourceRenderer(vmiResources.Limits, vmiResources.Requests, options...), nil
+func (t *TemplateService) newVirtStackResourceRenderer(vmi *v1.VirtualMachineInstance, baseResources k8sv1.ResourceRequirements, resourcePolicy launcherManifestResourcePolicy) (*ResourceRenderer, resource.Quantity) {
+	memoryOverhead := CalculateMemoryOverhead(t.clusterConfig, vmi, t.launcherHypervisorResources, t.memoryOverheadCalculators...)
+	hypervisorResource := ConstructHypervisorResourceName(t.launcherHypervisorResources)
+	options := []ResourceRendererOption{
+		WithVirtualizationResources(getHypervisorRequiredResources(hypervisorResource, t.clusterConfig.AllowEmulation())),
+	}
+	options = append(options, t.vmiVirtStackResourcePredicates(vmi, memoryOverhead, resourcePolicy).Apply()...)
+	renderer := NewResourceRenderer(baseResources.Limits, baseResources.Requests, options...)
+	renderer.resourceClaims = append(renderer.resourceClaims, baseResources.Claims...)
+	return renderer, memoryOverhead
 }
 
 func ConstructHypervisorResourceName(l hypervisor.LauncherHypervisorResources) k8sv1.ResourceName {
@@ -1775,7 +1777,7 @@ func (t *TemplateService) doesVMIRequireAutoCPULimits(vmi *v1.VirtualMachineInst
 	return false
 }
 
-func (t *TemplateService) VMIResourcePredicates(vmi *v1.VirtualMachineInstance, memoryOverhead resource.Quantity, resourcePolicy launcherManifestResourcePolicy) VMIResourcePredicates {
+func (t *TemplateService) vmiBaseResourcePredicates(vmi *v1.VirtualMachineInstance, resourcePolicy launcherManifestResourcePolicy) VMIResourcePredicates {
 	additionalCPUs := uint32(0)
 	if vmi.Spec.Domain.IOThreadsPolicy != nil &&
 		*vmi.Spec.Domain.IOThreadsPolicy == v1.IOThreadsPolicySupplementalPool &&
@@ -1790,11 +1792,6 @@ func (t *TemplateService) VMIResourcePredicates(vmi *v1.VirtualMachineInstance, 
 			NewVMIResourceRule(emptyMemoryRequest, WithMemoryRequests(vmi.Spec.Domain.Memory, t.clusterConfig.GetMemoryOvercommit())),
 			NewVMIResourceRule(doesVMIRequireDedicatedCPU, WithCPUPinning(vmi, vmi.Annotations, additionalCPUs)),
 			NewVMIResourceRule(not(doesVMIRequireDedicatedCPU), WithoutDedicatedCPU(vmi, t.clusterConfig.GetCPUAllocationRatio(), resourcePolicy.autoCPULimits)),
-			NewVMIResourceRule(hasHugePages, WithHugePages(vmi.Spec.Domain.Memory, memoryOverhead)),
-			NewVMIResourceRule(not(hasHugePages), WithMemoryOverhead(vmi.Spec.Domain.Resources, memoryOverhead)),
-			NewVMIResourceRule(func(*v1.VirtualMachineInstance) bool {
-				return resourcePolicy.autoMemoryLimits
-			}, WithAutoMemoryLimitsRatio(resourcePolicy.autoMemoryLimitRatio)),
 			NewVMIResourceRule(isGPUVMIDevicePlugins, WithGPUsDevicePlugins(vmi.Spec.Domain.Devices.GPUs)),
 			NewVMIResourceRule(func(vmi *v1.VirtualMachineInstance) bool {
 				return t.clusterConfig.GPUsWithDRAGateEnabled() && isGPUVMIDRA(vmi)
@@ -1806,9 +1803,22 @@ func (t *TemplateService) VMIResourcePredicates(vmi *v1.VirtualMachineInstance, 
 			NewVMIResourceRule(func(vmi *v1.VirtualMachineInstance) bool {
 				return t.clusterConfig.NetworkDevicesWithDRAGateEnabled() && vmispec.HasDRANetwork(vmi.Spec.Networks)
 			}, WithNetworksDRA(vmi.Spec.Networks)),
+			NewVMIResourceRule(reservation.HasVMIPersistentReservation, WithPersistentReservation()),
+		},
+	}
+}
+
+func (t *TemplateService) vmiVirtStackResourcePredicates(vmi *v1.VirtualMachineInstance, memoryOverhead resource.Quantity, resourcePolicy launcherManifestResourcePolicy) VMIResourcePredicates {
+	return VMIResourcePredicates{
+		vmi: vmi,
+		resourceRules: []VMIResourceRule{
+			NewVMIResourceRule(hasHugePages, WithHugePages(vmi.Spec.Domain.Memory, memoryOverhead)),
+			NewVMIResourceRule(not(hasHugePages), WithMemoryOverhead(vmi.Spec.Domain.Resources, memoryOverhead)),
+			NewVMIResourceRule(func(*v1.VirtualMachineInstance) bool {
+				return resourcePolicy.autoMemoryLimits
+			}, WithAutoMemoryLimitsRatio(resourcePolicy.autoMemoryLimitRatio)),
 			NewVMIResourceRule(util.IsSEVVMI, WithSEV()),
 			NewVMIResourceRule(util.IsTDXVMI, WithTDX()),
-			NewVMIResourceRule(reservation.HasVMIPersistentReservation, WithPersistentReservation()),
 			NewVMIResourceRule(func(vmi *v1.VirtualMachineInstance) bool {
 				return t.clusterConfig.IOMMUFDEnabled()
 			}, WithIOMMUFD()),

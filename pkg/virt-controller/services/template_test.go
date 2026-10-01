@@ -283,7 +283,13 @@ var _ = Describe("Template", func() {
 				Expect(compute.Image).To(Equal("kubevirt/virt-launcher"))
 				Expect(compute.Command).To(BeEmpty())
 				Expect(compute.Args).To(BeEmpty())
-				Expect(compute.Resources).To(Equal(k8sv1.ResourceRequirements{}))
+				Expect(compute.Resources.Requests).To(HaveKey(k8sv1.ResourceCPU))
+				Expect(compute.Resources.Requests).To(HaveKey(k8sv1.ResourceMemory))
+				Expect(compute.Resources.Requests).To(HaveKey(k8sv1.ResourceEphemeralStorage))
+				Expect(compute.Resources.Limits).To(HaveKey(k8sv1.ResourceName(TunDevice)))
+				Expect(compute.Resources.Limits).NotTo(HaveKey(
+					ConstructHypervisorResourceName(svc.launcherHypervisorResources),
+				))
 				Expect(slices.ContainsFunc(compute.VolumeMounts, func(mount k8sv1.VolumeMount) bool {
 					return mount.Name == "libvirt-runtime"
 				})).To(BeFalse())
