@@ -377,6 +377,9 @@ func computePodSecurityContext(vmi *v1.VirtualMachineInstance, seccomp *k8sv1.Se
 	return psc
 }
 
+// This function will be annotated using comments to denote which functionality is tied
+// to the virtualization stack and which is agnostic to it.
+
 func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, imageIDs map[string]string, backendStoragePVCName string, tempPod bool, memoryOverhead resource.Quantity) (*k8sv1.Pod, error) {
 	precond.MustNotBeNil(vmi)
 	domain := precond.MustNotBeEmpty(vmi.GetObjectMeta().GetName())
@@ -384,12 +387,13 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 
 	var userId int64 = util.RootUser
 
+	// VIRT-AGNOSTIC: User ID for running VMI is arbitrary
 	nonRoot := vmitrait.IsNonRoot(vmi)
 	if nonRoot {
 		userId = util.NonRootUID
 	}
 
-	// Pad the virt-launcher grace period.
+	// VIRT-AGNOSTIC: Pad the virt-launcher grace period.
 	// Ideally we want virt-handler to handle tearing down
 	// the vmi without virt-launcher's termination forcing
 	// the vmi down.
@@ -397,6 +401,7 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 	gracePeriodSeconds := gracePeriodInSeconds(vmi) + gracePeriodPaddingSeconds
 	gracePeriodKillAfter := gracePeriodSeconds + gracePeriodPaddingSeconds
 
+	// VIRT-AGNOSTIC: Determine image pull secrets for the VMI.
 	imagePullSecrets := imgPullSecrets(vmi.Spec.Volumes...)
 	if util.HasKernelBootContainerImage(vmi) && vmi.Spec.Domain.Firmware.KernelBoot.Container.ImagePullSecret != "" {
 		imagePullSecrets = appendUniqueImagePullSecret(imagePullSecrets, k8sv1.LocalObjectReference{
@@ -409,6 +414,8 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 		})
 	}
 
+	// VIRT-PLUGIN-BREAKUP: Render resource requirements for the VMI.
+	// Some of the resources are generic like TUN device, while the hypervisor device is specific to the virt-stack.
 	resourceRenderer, err := t.newResourceRenderer(vmi, memoryOverhead)
 	if err != nil {
 		return nil, err
@@ -417,6 +424,9 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 
 	ovmfPath := t.clusterConfig.GetOVMFPath(vmi.Spec.Architecture)
 
+	// VIRT-PLUGIN-BASE: Plugin will have to use this to inject hook sidecars into the VMI pod.
+	// VIRT-PLUGIN-TODO: Sidecar is useful for all virt stacks.
+	// This could be a part of the Plugin SDK.
 	var requestedHookSidecarList hooks.HookSidecarList
 	for _, sidecarCreator := range t.sidecarCreators {
 		sidecars, err := sidecarCreator(vmi, t.clusterConfig.GetConfig())
@@ -426,6 +436,8 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 		requestedHookSidecarList = append(requestedHookSidecarList, sidecars...)
 	}
 
+	// VIRT-PLUGIN-SPECIFIC: The whole command and args construction for the compute container is plugin-specific.
+	// ClusterConfig should be passed to it for resolving different pieces.
 	var command []string
 	var args []string
 	if tempPod {
@@ -449,6 +461,8 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 			"--disk-memory-limit", strconv.Itoa(int(t.clusterConfig.GetDiskVerification().MemoryLimit.Value())),
 			"--hypervisor", t.clusterConfig.GetHypervisor().Name,
 		}
+		// VIRT-PLUGIN-SPECIFIC: Additional args for compute container are appended for all stacks.
+		// VIRT-PLUGIN-BASE: Cluster config should be provided to each plugin for adding these args.
 		if nonRoot {
 			args = append(args, "--run-as-nonroot")
 		}
@@ -475,6 +489,7 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 	}
 
 	if t.clusterConfig.CrossArchitectureVirtualizationEnabled() {
+		// VIRT-AGNOSTIC: Allow cross-architecture emulation for the compute container.
 		command = append(command, "--allow-cross-arch-emulation")
 	}
 
@@ -487,13 +502,17 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 		args = append(args, "--simulate-crash")
 	}
 
+	// VIRT-AGNOSTIC: Need to get back to this one.
 	volumeRenderer, err := t.newVolumeRenderer(vmi, imageIDs, namespace, requestedHookSidecarList, backendStoragePVCName)
 	if err != nil {
 		return nil, err
 	}
 
+	// VIRT-PLUGIN-BASE: Container renderer can be shared across different plugins.
 	compute := t.newContainerSpecRenderer(vmi, volumeRenderer, resources, userId, WithCommand(command), WithArgs(args)).Render()
 
+	// VIRT-PLUGIN-SPECIFIC: Different plugins will add diff env vars based on the virtstack.
+	// For example, Cloud Hypervisor based virt-launcher would need to add its own labels.
 	virtLauncherLogVerbosity := t.clusterConfig.GetVirtLauncherVerbosity()
 
 	if verbosity, isSet := vmi.Labels[logVerbosity]; isSet || virtLauncherLogVerbosity != virtconfig.DefaultVirtLauncherLogVerbosity {
@@ -531,6 +550,9 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 	// Make sure the compute container is always the first since the mutating webhook shipped with the sriov operator
 	// for adding the requested resources to the pod will add them to the first container of the list
 	containers := []k8sv1.Container{compute}
+
+	// VIRT-PLUGIN-BASE: Top-level KubeVirt features like ContainerDisk and Kernel Boot require additional containers
+	// to be present in the virt-launcher pod. They should be added for any virtualization stack backend.
 	if !t.clusterConfig.ImageVolumeEnabled() {
 		containersDisks := containerdisk.GenerateContainers(vmi, t.clusterConfig, imageIDs, containerDisks, virtBinDir)
 		containers = append(containers, containersDisks...)
@@ -542,11 +564,15 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 		}
 	}
 
+	// VIRT-PLUGIN-BASE: VirtioFS requires additional containers to be present in the virt-launcher pod.
+	// Irrespective of the virtualization stack backend, VirtioFS containers should be added if VirtioFS is enabled.
 	virtiofsContainers := generateVirtioFSContainers(vmi, t.launcherImage, t.clusterConfig)
 	if virtiofsContainers != nil {
 		containers = append(containers, virtiofsContainers...)
 	}
 
+	// VIRT-PLUGIN-BASE: Sidecar containers requested by the user should be added after the core containers.
+	// This also seems to be agnostic of the virtualization stack backend.
 	var sidecarVolumes []k8sv1.Volume
 	for i, requestedHookSidecar := range requestedHookSidecarList {
 		sidecarContainer := newSidecarContainerRenderer(
@@ -684,6 +710,11 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 		}
 
 	}
+
+	// VIRT-PLUGIN-BASE: The base virt-launcher pod spec will be constructed here,
+	// using all the information above which was agnostic of virt-stack
+	// and/or is added for top-level KubeVirt features like ContainerDisk, Kernel Boot, and VirtioFS.
+
 	pod := k8sv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "virt-launcher-" + domain + "-",
@@ -731,7 +762,9 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 		pod.Spec.Affinity = vmi.Spec.Affinity.DeepCopy()
 	}
 
+	// VIRT-PLUGIN-SPECIFIC: Node Affinity needs to be set based on the virt stack being used
 	setNodeAffinityForPod(vmi, &pod)
+
 	if err := setPersistentReservationAntiAffinity(vmi, &pod, t.persistentVolumeClaimStore); err != nil {
 		return nil, err
 	}
@@ -998,11 +1031,14 @@ func (t *TemplateService) newVolumeRenderer(vmi *v1.VirtualMachineInstance, imag
 	return volumeRenderer, nil
 }
 
+// VIRT-PLUGIN-BREAKUP: This function has functionality that is both specific to virt-stack and generic.
+// For example, hypevisorResource is specific to the virt-stack.
 func (t *TemplateService) newResourceRenderer(vmi *v1.VirtualMachineInstance, memoryOverhead resource.Quantity) (*ResourceRenderer, error) {
 	vmiResources := vmi.Spec.Domain.Resources
 	hypervisorResource := ConstructHypervisorResourceName(t.launcherHypervisorResources)
 	baseOptions := []ResourceRendererOption{
 		WithEphemeralStorageRequest(),
+		// VIRT-PLUGIN-BREAKUP: Even under getRequiredResources, the hypervisor device only is virt-stack specific. Rest of the devices are generic.
 		WithVirtualizationResources(getRequiredResources(vmi, hypervisorResource, t.clusterConfig.AllowEmulation())),
 	}
 
