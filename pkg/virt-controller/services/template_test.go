@@ -165,6 +165,72 @@ var _ = Describe("Template", func() {
 		testutils.UpdateFakeKubeVirtClusterConfig(kvStore, kv)
 	})
 
+	Describe("Pre-render resolution", func() {
+		It("snapshots PVC cache state", func() {
+			config, kvStore, svc = configFactory(defaultArch)
+			pvc := &k8sv1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pvc",
+					Namespace: "test",
+					Labels:    map[string]string{"source": "original"},
+				},
+			}
+			Expect(pvcCache.Add(pvc)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(pvcCache.Delete(pvc)).To(Succeed())
+			})
+
+			vmi := api.NewMinimalVMI("test-vmi")
+			vmi.Namespace = pvc.Namespace
+			data, err := svc.resolveLauncherManifestData(vmi, nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			pvc.Labels["source"] = "changed"
+			obj, exists, err := data.pvcStore.GetByKey("test/test-pvc")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(exists).To(BeTrue())
+			Expect(obj.(*k8sv1.PersistentVolumeClaim).Labels).To(HaveKeyWithValue("source", "original"))
+		})
+
+		It("resolves namespace and quota resource policy", func() {
+			config, kvStore, svc = configFactory(defaultArch)
+			namespace := &k8sv1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "resource-policy",
+					Labels: map[string]string{v1.AutoMemoryLimitsRatioLabel: "1.5"},
+				},
+			}
+			quota := &k8sv1.ResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "resource-policy",
+					Namespace: namespace.Name,
+				},
+				Spec: k8sv1.ResourceQuotaSpec{
+					Hard: k8sv1.ResourceList{
+						k8sv1.ResourceLimitsCPU:    resource.MustParse("1"),
+						k8sv1.ResourceLimitsMemory: resource.MustParse("1Gi"),
+					},
+				},
+			}
+			Expect(namespaceStore.Add(namespace)).To(Succeed())
+			Expect(resourceQuotaStore.Add(quota)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(namespaceStore.Delete(namespace)).To(Succeed())
+				Expect(resourceQuotaStore.Delete(quota)).To(Succeed())
+			})
+
+			vmi := api.NewMinimalVMI("test-vmi")
+			vmi.Namespace = namespace.Name
+			data, err := svc.resolveLauncherManifestData(vmi, nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(data.resourcePolicy).To(Equal(launcherManifestResourcePolicy{
+				autoCPULimits:        true,
+				autoMemoryLimits:     true,
+				autoMemoryLimitRatio: 1.5,
+			}))
+		})
+	})
+
 	Describe("Rendering", func() {
 
 		newMinimalWithContainerDisk := func(name string) *v1.VirtualMachineInstance {

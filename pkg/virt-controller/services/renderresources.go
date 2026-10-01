@@ -309,8 +309,11 @@ func WithMemoryOverhead(guestResourceSpec v1.ResourceRequirements, memoryOverhea
 }
 
 func WithAutoMemoryLimits(namespace string, namespaceStore cache.Store) ResourceRendererOption {
+	return WithAutoMemoryLimitsRatio(getMemoryLimitsRatio(namespace, namespaceStore))
+}
+
+func WithAutoMemoryLimitsRatio(requestRatio float64) ResourceRendererOption {
 	return func(renderer *ResourceRenderer) {
-		requestRatio := getMemoryLimitsRatio(namespace, namespaceStore)
 		memoryRequest := renderer.vmRequests[k8sv1.ResourceMemory]
 		value := int64(float64(memoryRequest.Value()) * requestRatio)
 		renderer.calculatedLimits[k8sv1.ResourceMemory] = *resource.NewQuantity(value, memoryRequest.Format)
