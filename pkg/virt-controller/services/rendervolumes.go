@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	backendstorage "kubevirt.io/kubevirt/pkg/storage/backend-storage"
@@ -68,11 +69,28 @@ func NewVolumeRenderer(imagePullPolicyGetter imagePullPolicyGetter, imageVolumeF
 }
 
 func (vr *VolumeRenderer) Mounts() []k8sv1.VolumeMount {
+	return withLibvirtRuntimeMount(vr.BaseMounts())
+}
+
+func withLibvirtRuntimeMount(volumeMounts []k8sv1.VolumeMount) []k8sv1.VolumeMount {
+	libvirtRuntime := mountPath("libvirt-runtime", "/var/run/libvirt")
+	socketsIndex := slices.IndexFunc(volumeMounts, func(mount k8sv1.VolumeMount) bool {
+		return mount.Name == "sockets"
+	})
+	if socketsIndex == -1 {
+		return append(volumeMounts, libvirtRuntime)
+	}
+	volumeMounts = append(volumeMounts, k8sv1.VolumeMount{})
+	copy(volumeMounts[socketsIndex+1:], volumeMounts[socketsIndex:])
+	volumeMounts[socketsIndex] = libvirtRuntime
+	return volumeMounts
+}
+
+func (vr *VolumeRenderer) BaseMounts() []k8sv1.VolumeMount {
 	volumeMounts := []k8sv1.VolumeMount{
 		mountPath("private", util.VirtPrivateDir),
 		mountPath("public", util.VirtShareDir),
 		mountPath("ephemeral-disks", vr.ephemeralDiskDir),
-		mountPath("libvirt-runtime", "/var/run/libvirt"),
 		mountPath("sockets", filepath.Join(vr.virtShareDir, "sockets")),
 	}
 	if !vr.useImageVolumes {
@@ -82,12 +100,29 @@ func (vr *VolumeRenderer) Mounts() []k8sv1.VolumeMount {
 }
 
 func (vr *VolumeRenderer) Volumes() []k8sv1.Volume {
+	return withLibvirtRuntimeVolume(vr.BaseVolumes())
+}
+
+func withLibvirtRuntimeVolume(volumes []k8sv1.Volume) []k8sv1.Volume {
+	libvirtRuntime := emptyDirVolume("libvirt-runtime")
+	ephemeralDisksIndex := slices.IndexFunc(volumes, func(volume k8sv1.Volume) bool {
+		return volume.Name == "ephemeral-disks"
+	})
+	if ephemeralDisksIndex == -1 {
+		return append(volumes, libvirtRuntime)
+	}
+	volumes = append(volumes, k8sv1.Volume{})
+	copy(volumes[ephemeralDisksIndex+1:], volumes[ephemeralDisksIndex:])
+	volumes[ephemeralDisksIndex] = libvirtRuntime
+	return volumes
+}
+
+func (vr *VolumeRenderer) BaseVolumes() []k8sv1.Volume {
 	volumes := []k8sv1.Volume{
 		emptyDirVolume("private"),
 		emptyDirVolume("public"),
 		emptyDirVolume("sockets"),
 		emptyDirVolume(virtBinDir),
-		emptyDirVolume("libvirt-runtime"),
 		emptyDirVolume("ephemeral-disks"),
 	}
 	if !vr.useImageVolumes {

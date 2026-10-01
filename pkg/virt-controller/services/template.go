@@ -473,64 +473,28 @@ func computePodSecurityContext(vmi *v1.VirtualMachineInstance, seccomp *k8sv1.Se
 	return psc
 }
 
-// This function will be annotated using comments to denote which functionality is tied
-// to the virtualization stack and which is agnostic to it.
-
 func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, data *launcherManifestPreRenderData, tempPod bool, memoryOverhead resource.Quantity) (*k8sv1.Pod, error) {
-	precond.MustNotBeNil(vmi)
-	precond.MustNotBeNil(data)
-	domain := precond.MustNotBeEmpty(vmi.GetObjectMeta().GetName())
-	namespace := precond.MustNotBeEmpty(vmi.GetObjectMeta().GetNamespace())
-	imageIDs := data.imageIDs
-	backendStoragePVCName := data.backendStoragePVCName
-	requestedHookSidecarList := data.hookSidecars
-
-	var userId int64 = util.RootUser
-
-	// VIRT-AGNOSTIC: User ID for running VMI is arbitrary
-	nonRoot := vmitrait.IsNonRoot(vmi)
-	if nonRoot {
-		userId = util.NonRootUID
+	pod, err := t.renderBaseLauncherManifest(vmi, data, tempPod)
+	if err != nil {
+		return nil, err
 	}
 
-	// VIRT-AGNOSTIC: Pad the virt-launcher grace period.
-	// Ideally we want virt-handler to handle tearing down
-	// the vmi without virt-launcher's termination forcing
-	// the vmi down.
-	const gracePeriodPaddingSeconds int64 = 15
-	gracePeriodSeconds := gracePeriodInSeconds(vmi) + gracePeriodPaddingSeconds
-	gracePeriodKillAfter := gracePeriodSeconds + gracePeriodPaddingSeconds
-
-	// VIRT-AGNOSTIC: Determine image pull secrets for the VMI.
-	imagePullSecrets := imgPullSecrets(vmi.Spec.Volumes...)
-	if util.HasKernelBootContainerImage(vmi) && vmi.Spec.Domain.Firmware.KernelBoot.Container.ImagePullSecret != "" {
-		imagePullSecrets = appendUniqueImagePullSecret(imagePullSecrets, k8sv1.LocalObjectReference{
-			Name: vmi.Spec.Domain.Firmware.KernelBoot.Container.ImagePullSecret,
-		})
-	}
-	if t.imagePullSecret != "" {
-		imagePullSecrets = appendUniqueImagePullSecret(imagePullSecrets, k8sv1.LocalObjectReference{
-			Name: t.imagePullSecret,
-		})
-	}
-
-	// VIRT-PLUGIN-BREAKUP: Render resource requirements for the VMI.
-	// Some of the resources are generic like TUN device, while the hypervisor device is specific to the virt-stack.
+	addLibvirtRuntime(pod)
+	compute := &pod.Spec.Containers[0]
 	resourceRenderer, err := t.newResourceRenderer(vmi, memoryOverhead, data.resourcePolicy)
 	if err != nil {
 		return nil, err
 	}
-	resources := resourceRenderer.ResourceRequirements()
+	compute.Resources = resourceRenderer.ResourceRequirements()
 
-	ovmfPath := t.clusterConfig.GetOVMFPath(vmi.Spec.Architecture)
+	domain := precond.MustNotBeEmpty(vmi.GetObjectMeta().GetName())
+	namespace := precond.MustNotBeEmpty(vmi.GetObjectMeta().GetNamespace())
+	gracePeriodSeconds := gracePeriodInSeconds(vmi) + gracePeriodPaddingSeconds
 
-	// VIRT-PLUGIN-SPECIFIC: The whole command and args construction for the compute container is plugin-specific.
-	// ClusterConfig should be passed to it for resolving different pieces.
 	var command []string
 	var args []string
 	if tempPod {
-		logger := log.DefaultLogger()
-		logger.Infof("RUNNING doppleganger pod for %s", vmi.Name)
+		log.DefaultLogger().Infof("RUNNING doppleganger pod for %s", vmi.Name)
 		command = []string{"/bin/bash"}
 		args = []string{"-c", "echo", "bound PVCs"}
 	} else {
@@ -544,14 +508,12 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, d
 			"--ephemeral-disk-dir", t.ephemeralDiskDir,
 			"--container-disk-dir", t.containerDiskDir,
 			"--grace-period-seconds", strconv.Itoa(int(gracePeriodSeconds)),
-			"--hook-sidecars", strconv.Itoa(len(requestedHookSidecarList)),
-			"--ovmf-path", ovmfPath,
+			"--hook-sidecars", strconv.Itoa(len(data.hookSidecars)),
+			"--ovmf-path", t.clusterConfig.GetOVMFPath(vmi.Spec.Architecture),
 			"--disk-memory-limit", strconv.Itoa(int(t.clusterConfig.GetDiskVerification().MemoryLimit.Value())),
 			"--hypervisor", t.clusterConfig.GetHypervisor().Name,
 		}
-		// VIRT-PLUGIN-SPECIFIC: Additional args for compute container are appended for all stacks.
-		// VIRT-PLUGIN-BASE: Cluster config should be provided to each plugin for adding these args.
-		if nonRoot {
+		if vmitrait.IsNonRoot(vmi) {
 			args = append(args, "--run-as-nonroot")
 		}
 		if t.clusterConfig.ImageVolumeEnabled() {
@@ -575,57 +537,145 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, d
 	if t.clusterConfig.AllowEmulation() {
 		args = append(args, "--allow-emulation")
 	}
-
 	if t.clusterConfig.CrossArchitectureVirtualizationEnabled() {
-		// VIRT-AGNOSTIC: Allow cross-architecture emulation for the compute container.
 		command = append(command, "--allow-cross-arch-emulation")
 	}
-
 	if checkForKeepLauncherAfterFailure(vmi) {
 		args = append(args, "--keep-after-failure")
 	}
-
-	_, ok := vmi.Annotations[v1.FuncTestLauncherFailFastAnnotation]
-	if ok {
+	if _, ok := vmi.Annotations[v1.FuncTestLauncherFailFastAnnotation]; ok {
 		args = append(args, "--simulate-crash")
 	}
+	compute.Command = command
+	compute.Args = args
 
-	// VIRT-AGNOSTIC: Need to get back to this one.
+	_, stackEnv, err := t.launcherEnvironment(vmi)
+	if err != nil {
+		return nil, err
+	}
+	podNameEnvIndex := len(compute.Env)
+	for i := range compute.Env {
+		if compute.Env[i].Name == envVarPodName {
+			podNameEnvIndex = i
+			break
+		}
+	}
+	env := make([]k8sv1.EnvVar, 0, len(compute.Env)+len(stackEnv))
+	env = append(env, compute.Env[:podNameEnvIndex]...)
+	env = append(env, stackEnv...)
+	compute.Env = append(env, compute.Env[podNameEnvIndex:]...)
+
+	if t.clusterConfig.VmiMemoryOverheadReportEnabled() {
+		pod.Annotations[v1.MemoryOverheadAnnotationBytes] = strconv.FormatInt(memoryOverhead.Value(), 10)
+	}
+
+	pod.Spec.NodeSelector = t.newVirtStackNodeSelectorRenderer(vmi, pod.Spec.NodeSelector).Render()
+	setNodeAffinityForPod(vmi, pod)
+	if err := setPersistentReservationAntiAffinity(vmi, pod, data.pvcStore); err != nil {
+		return nil, err
+	}
+	if t.clusterConfig.CrossArchitectureVirtualizationEnabled() {
+		setPreferredArchitectureAffinity(vmi.Spec.Architecture, pod)
+		if vmi.Spec.Architecture != "" {
+			if pod.Spec.NodeSelector == nil {
+				pod.Spec.NodeSelector = map[string]string{}
+			}
+			pod.Spec.NodeSelector[v1.VMArchLabel+vmi.Spec.Architecture] = "true"
+		}
+	}
+
+	if err := validatePermittedHostDevices(&vmi.Spec, t.clusterConfig); err != nil {
+		return nil, err
+	}
+	return pod, nil
+}
+
+func addLibvirtRuntime(pod *k8sv1.Pod) {
+	compute := &pod.Spec.Containers[0]
+	compute.VolumeMounts = withLibvirtRuntimeMount(compute.VolumeMounts)
+	pod.Spec.Volumes = withLibvirtRuntimeVolume(pod.Spec.Volumes)
+}
+
+func (t *TemplateService) launcherEnvironment(vmi *v1.VirtualMachineInstance) (uint, []k8sv1.EnvVar, error) {
+	virtLauncherLogVerbosity, verbosityStr, setVerbosityEnv, err := t.launcherLogVerbosity(vmi)
+	if err != nil {
+		return 0, nil, err
+	}
+	var env []k8sv1.EnvVar
+	if setVerbosityEnv {
+		env = append(env, k8sv1.EnvVar{Name: util.ENV_VAR_VIRT_LAUNCHER_LOG_VERBOSITY, Value: verbosityStr})
+	}
+	if labelValue, ok := vmi.Labels[debugLogs]; (ok && strings.EqualFold(labelValue, "true")) || virtLauncherLogVerbosity > util.EXT_LOG_VERBOSITY_THRESHOLD {
+		env = append(env, k8sv1.EnvVar{Name: util.ENV_VAR_LIBVIRT_DEBUG_LOGS, Value: "1"})
+	}
+	if labelValue, ok := vmi.Labels[virtiofsDebugLogs]; (ok && strings.EqualFold(labelValue, "true")) || virtLauncherLogVerbosity > util.EXT_LOG_VERBOSITY_THRESHOLD {
+		env = append(env, k8sv1.EnvVar{Name: envVarVirtiofsDebugLogs, Value: "1"})
+	}
+	return virtLauncherLogVerbosity, env, nil
+}
+
+func (t *TemplateService) launcherLogVerbosity(vmi *v1.VirtualMachineInstance) (uint, string, bool, error) {
+	virtLauncherLogVerbosity := t.clusterConfig.GetVirtLauncherVerbosity()
+	verbosityStr := fmt.Sprint(virtLauncherLogVerbosity)
+	if verbosity, isSet := vmi.Labels[logVerbosity]; isSet || virtLauncherLogVerbosity != virtconfig.DefaultVirtLauncherLogVerbosity {
+		if isSet {
+			verbosityStr = verbosity
+			verbosityInt, err := strconv.Atoi(verbosity)
+			if err != nil {
+				return 0, "", false, fmt.Errorf("verbosity %s cannot cast to int: %v", verbosity, err)
+			}
+			virtLauncherLogVerbosity = uint(verbosityInt)
+		}
+		return virtLauncherLogVerbosity, verbosityStr, true, nil
+	}
+	return virtLauncherLogVerbosity, verbosityStr, false, nil
+}
+
+const gracePeriodPaddingSeconds int64 = 15
+
+func (t *TemplateService) renderBaseLauncherManifest(vmi *v1.VirtualMachineInstance, data *launcherManifestPreRenderData, tempPod bool) (*k8sv1.Pod, error) {
+	precond.MustNotBeNil(vmi)
+	precond.MustNotBeNil(data)
+	domain := precond.MustNotBeEmpty(vmi.GetObjectMeta().GetName())
+	namespace := precond.MustNotBeEmpty(vmi.GetObjectMeta().GetNamespace())
+	imageIDs := data.imageIDs
+	backendStoragePVCName := data.backendStoragePVCName
+	requestedHookSidecarList := data.hookSidecars
+
+	var userId int64 = util.RootUser
+
+	// VIRT-AGNOSTIC: User ID for running VMI is arbitrary
+	nonRoot := vmitrait.IsNonRoot(vmi)
+	if nonRoot {
+		userId = util.NonRootUID
+	}
+
+	// VIRT-AGNOSTIC: Pad the virt-launcher grace period.
+	// Ideally we want virt-handler to handle tearing down
+	// the vmi without virt-launcher's termination forcing
+	// the vmi down.
+	gracePeriodSeconds := gracePeriodInSeconds(vmi) + gracePeriodPaddingSeconds
+	gracePeriodKillAfter := gracePeriodSeconds + gracePeriodPaddingSeconds
+
+	// VIRT-AGNOSTIC: Determine image pull secrets for the VMI.
+	imagePullSecrets := imgPullSecrets(vmi.Spec.Volumes...)
+	if util.HasKernelBootContainerImage(vmi) && vmi.Spec.Domain.Firmware.KernelBoot.Container.ImagePullSecret != "" {
+		imagePullSecrets = appendUniqueImagePullSecret(imagePullSecrets, k8sv1.LocalObjectReference{
+			Name: vmi.Spec.Domain.Firmware.KernelBoot.Container.ImagePullSecret,
+		})
+	}
+	if t.imagePullSecret != "" {
+		imagePullSecrets = appendUniqueImagePullSecret(imagePullSecrets, k8sv1.LocalObjectReference{
+			Name: t.imagePullSecret,
+		})
+	}
+
 	volumeRenderer, err := t.newVolumeRenderer(vmi, imageIDs, namespace, requestedHookSidecarList, backendStoragePVCName, data.pvcStore)
 	if err != nil {
 		return nil, err
 	}
 
-	// VIRT-PLUGIN-BASE: Container renderer can be shared across different plugins.
-	compute := t.newContainerSpecRenderer(vmi, volumeRenderer, resources, userId, WithCommand(command), WithArgs(args)).Render()
-
-	// VIRT-PLUGIN-SPECIFIC: Different plugins will add diff env vars based on the virtstack.
-	// For example, Cloud Hypervisor based virt-launcher would need to add its own labels.
-	virtLauncherLogVerbosity := t.clusterConfig.GetVirtLauncherVerbosity()
-
-	if verbosity, isSet := vmi.Labels[logVerbosity]; isSet || virtLauncherLogVerbosity != virtconfig.DefaultVirtLauncherLogVerbosity {
-		// Override the cluster wide verbosity level if a specific value has been provided for this VMI
-		verbosityStr := fmt.Sprint(virtLauncherLogVerbosity)
-		if isSet {
-			verbosityStr = verbosity
-
-			verbosityInt, err := strconv.Atoi(verbosity)
-			if err != nil {
-				return nil, fmt.Errorf("verbosity %s cannot cast to int: %v", verbosity, err)
-			}
-
-			virtLauncherLogVerbosity = uint(verbosityInt)
-		}
-		compute.Env = append(compute.Env, k8sv1.EnvVar{Name: util.ENV_VAR_VIRT_LAUNCHER_LOG_VERBOSITY, Value: verbosityStr})
-	}
-
-	if labelValue, ok := vmi.Labels[debugLogs]; (ok && strings.EqualFold(labelValue, "true")) || virtLauncherLogVerbosity > util.EXT_LOG_VERBOSITY_THRESHOLD {
-		compute.Env = append(compute.Env, k8sv1.EnvVar{Name: util.ENV_VAR_LIBVIRT_DEBUG_LOGS, Value: "1"})
-	}
-	if labelValue, ok := vmi.Labels[virtiofsDebugLogs]; (ok && strings.EqualFold(labelValue, "true")) || virtLauncherLogVerbosity > util.EXT_LOG_VERBOSITY_THRESHOLD {
-		compute.Env = append(compute.Env, k8sv1.EnvVar{Name: envVarVirtiofsDebugLogs, Value: "1"})
-	}
-
+	compute := t.newContainerSpecRenderer(vmi, volumeRenderer, k8sv1.ResourceRequirements{}, userId).Render()
 	compute.Env = append(compute.Env, k8sv1.EnvVar{
 		Name: envVarPodName,
 		ValueFrom: &k8sv1.EnvVarSource{
@@ -711,12 +761,12 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, d
 		podAnnotations[v1.EphemeralProvisioningObject] = "true"
 	}
 
-	if t.clusterConfig.VmiMemoryOverheadReportEnabled() {
-		podAnnotations[v1.MemoryOverheadAnnotationBytes] = strconv.FormatInt(memoryOverhead.Value(), 10)
-	}
-
 	var initContainers []k8sv1.Container
 
+	virtLauncherLogVerbosity, _, _, err := t.launcherLogVerbosity(vmi)
+	if err != nil {
+		return nil, err
+	}
 	sconsolelogContainer := generateSerialConsoleLogContainer(vmi, t.launcherImage, t.clusterConfig, virtLauncherLogVerbosity)
 	if sconsolelogContainer != nil {
 		initContainers = append(initContainers, *sconsolelogContainer)
@@ -817,8 +867,8 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, d
 			RestartPolicy:                 k8sv1.RestartPolicyNever,
 			Containers:                    containers,
 			InitContainers:                initContainers,
-			NodeSelector:                  t.newNodeSelectorRenderer(vmi).Render(),
-			Volumes:                       volumeRenderer.Volumes(),
+			NodeSelector:                  t.newBaseNodeSelectorRenderer(vmi).Render(),
+			Volumes:                       volumeRenderer.BaseVolumes(),
 			ImagePullSecrets:              imagePullSecrets,
 			DNSConfig:                     vmi.Spec.DNSConfig,
 			DNSPolicy:                     vmi.Spec.DNSPolicy,
@@ -847,23 +897,6 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, d
 		pod.Spec.Affinity = vmi.Spec.Affinity.DeepCopy()
 	}
 
-	// VIRT-PLUGIN-SPECIFIC: Node Affinity needs to be set based on the virt stack being used
-	setNodeAffinityForPod(vmi, &pod)
-
-	if err := setPersistentReservationAntiAffinity(vmi, &pod, data.pvcStore); err != nil {
-		return nil, err
-	}
-
-	if t.clusterConfig.CrossArchitectureVirtualizationEnabled() {
-		setPreferredArchitectureAffinity(vmi.Spec.Architecture, &pod)
-		if vmi.Spec.Architecture != "" {
-			if pod.Spec.NodeSelector == nil {
-				pod.Spec.NodeSelector = map[string]string{}
-			}
-			pod.Spec.NodeSelector[v1.VMArchLabel+vmi.Spec.Architecture] = "true"
-		}
-	}
-
 	serviceAccountVolumeName := storageutils.ServiceAccountNameFromVolumes(vmi.Spec.Volumes)
 	if vmi.Spec.ServiceAccountName != "" {
 		pod.Spec.ServiceAccountName = vmi.Spec.ServiceAccountName
@@ -884,11 +917,28 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, d
 	return &pod, nil
 }
 
-func (t *TemplateService) newNodeSelectorRenderer(vmi *v1.VirtualMachineInstance) *NodeSelectorRenderer {
+func (t *TemplateService) newBaseNodeSelectorRenderer(vmi *v1.VirtualMachineInstance) *NodeSelectorRenderer {
 	var opts []NodeSelectorRendererOption
 	if vmi.IsCPUDedicated() {
 		opts = append(opts, WithDedicatedCPU())
 	}
+	if vmi.IsRealtimeEnabled() {
+		log.Log.V(4).Info("Add realtime node label selector")
+		opts = append(opts, WithRealtime())
+	}
+	if t.clusterConfig.CrossArchitectureVirtualizationEnabled() && vmi.Spec.Architecture != "" {
+		opts = append(opts, WithoutNativeArchSelector())
+	}
+	return NewNodeSelectorRenderer(
+		vmi.Spec.NodeSelector,
+		t.clusterConfig.GetNodeSelectors(),
+		vmi.Spec.Architecture,
+		opts...,
+	)
+}
+
+func (t *TemplateService) newVirtStackNodeSelectorRenderer(vmi *v1.VirtualMachineInstance, baseNodeSelectors map[string]string) *NodeSelectorRenderer {
+	var opts []NodeSelectorRendererOption
 	if t.clusterConfig.HypervStrictCheckEnabled() {
 		opts = append(opts, WithHyperv(vmi.Spec.Domain.Features))
 	}
@@ -915,10 +965,6 @@ func (t *TemplateService) newNodeSelectorRenderer(vmi *v1.VirtualMachineInstance
 		opts = append(opts, WithTSCTimer(vmi.Status.TopologyHints.TSCFrequency))
 	}
 
-	if vmi.IsRealtimeEnabled() {
-		log.Log.V(4).Info("Add realtime node label selector")
-		opts = append(opts, WithRealtime())
-	}
 	if util.IsSEVVMI(vmi) {
 		log.Log.V(4).Info("Add SEV node label selector")
 		opts = append(opts, WithSEVSelector())
@@ -943,14 +989,10 @@ func (t *TemplateService) newNodeSelectorRenderer(vmi *v1.VirtualMachineInstance
 		opts = append(opts, WithTDXSelector())
 	}
 
-	if t.clusterConfig.CrossArchitectureVirtualizationEnabled() && vmi.Spec.Architecture != "" {
-		opts = append(opts, WithoutNativeArchSelector())
-	}
-
 	return NewNodeSelectorRenderer(
-		vmi.Spec.NodeSelector,
-		t.clusterConfig.GetNodeSelectors(),
-		vmi.Spec.Architecture,
+		baseNodeSelectors,
+		nil,
+		"",
 		opts...,
 	)
 }
@@ -1034,7 +1076,7 @@ func (t *TemplateService) newInitContainerRenderer(vmiSpec *v1.VirtualMachineIns
 func (t *TemplateService) newContainerSpecRenderer(vmi *v1.VirtualMachineInstance, volumeRenderer *VolumeRenderer, resources k8sv1.ResourceRequirements, userId int64, extraOpts ...Option) *ContainerSpecRenderer {
 	computeContainerOpts := []Option{
 		WithVolumeDevices(volumeRenderer.VolumeDevices()...),
-		WithVolumeMounts(volumeRenderer.Mounts()...),
+		WithVolumeMounts(volumeRenderer.BaseMounts()...),
 		WithSharedFilesystems(volumeRenderer.SharedFilesystemPaths()...),
 		WithResourceRequirements(resources),
 		WithPorts(vmi),
@@ -1125,10 +1167,6 @@ func (t *TemplateService) newResourceRenderer(vmi *v1.VirtualMachineInstance, me
 		WithEphemeralStorageRequest(),
 		// VIRT-PLUGIN-BREAKUP: Even under getRequiredResources, the hypervisor device only is virt-stack specific. Rest of the devices are generic.
 		WithVirtualizationResources(getRequiredResources(vmi, hypervisorResource, t.clusterConfig.AllowEmulation())),
-	}
-
-	if err := validatePermittedHostDevices(&vmi.Spec, t.clusterConfig); err != nil {
-		return nil, err
 	}
 
 	options := append(baseOptions, t.VMIResourcePredicates(vmi, memoryOverhead, resourcePolicy).Apply()...)

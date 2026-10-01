@@ -263,6 +263,44 @@ var _ = Describe("Template", func() {
 			return vmi
 		}
 
+		Context("stack-neutral base manifest", func() {
+			It("contains common launcher pieces without virtualization stack configuration", func() {
+				config, kvStore, svc = configFactory(defaultArch)
+				vmi := newMinimalWithContainerDisk("base-manifest")
+				vmi.Labels = map[string]string{logVerbosity: "3"}
+
+				data, err := svc.resolveLauncherManifestData(vmi, nil, nil)
+				Expect(err).NotTo(HaveOccurred())
+				pod, err := svc.renderBaseLauncherManifest(vmi, data, false)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(pod.GenerateName).To(Equal("virt-launcher-base-manifest-"))
+				Expect(pod.Spec.Containers).NotTo(BeEmpty())
+				Expect(pod.Spec.Volumes).NotTo(BeEmpty())
+
+				compute := pod.Spec.Containers[0]
+				Expect(compute.Name).To(Equal("compute"))
+				Expect(compute.Image).To(Equal("kubevirt/virt-launcher"))
+				Expect(compute.Command).To(BeEmpty())
+				Expect(compute.Args).To(BeEmpty())
+				Expect(compute.Resources).To(Equal(k8sv1.ResourceRequirements{}))
+				Expect(slices.ContainsFunc(compute.VolumeMounts, func(mount k8sv1.VolumeMount) bool {
+					return mount.Name == "libvirt-runtime"
+				})).To(BeFalse())
+				Expect(slices.ContainsFunc(pod.Spec.Volumes, func(volume k8sv1.Volume) bool {
+					return volume.Name == "libvirt-runtime"
+				})).To(BeFalse())
+				Expect(slices.ContainsFunc(compute.Env, func(env k8sv1.EnvVar) bool {
+					return env.Name == envVarPodName
+				})).To(BeTrue())
+				Expect(slices.ContainsFunc(compute.Env, func(env k8sv1.EnvVar) bool {
+					return env.Name == util.ENV_VAR_VIRT_LAUNCHER_LOG_VERBOSITY ||
+						env.Name == util.ENV_VAR_LIBVIRT_DEBUG_LOGS
+				})).To(BeFalse())
+				Expect(pod.Spec.Affinity).To(BeNil())
+			})
+		})
+
 		Context("virt-launcher Pod characterization", func() {
 			newCharacterizationVMI := func() *v1.VirtualMachineInstance {
 				vmi := newMinimalWithContainerDisk("characterization")
