@@ -20,6 +20,8 @@
 package services
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -73,6 +75,7 @@ var testHookSidecar = hooks.HookSidecar{
 
 var _ = Describe("Template", func() {
 	var configFactory func(string) (*virtconfig.ClusterConfig, cache.Store, *TemplateService)
+	var configFactoryWithKV func(string, *v1.KubeVirt) (*virtconfig.ClusterConfig, cache.Store, *TemplateService)
 	var qemuGid int64 = 107
 	var defaultArch = "amd64"
 
@@ -124,8 +127,8 @@ var _ = Describe("Template", func() {
 	})
 
 	BeforeEach(func() {
-		configFactory = func(cpuArch string) (*virtconfig.ClusterConfig, cache.Store, *TemplateService) {
-			config, _, kvStore := testutils.NewFakeClusterConfigUsingKVWithCPUArch(kv, cpuArch)
+		configFactoryWithKV = func(cpuArch string, kubeVirt *v1.KubeVirt) (*virtconfig.ClusterConfig, cache.Store, *TemplateService) {
+			config, _, kvStore := testutils.NewFakeClusterConfigUsingKVWithCPUArch(kubeVirt, cpuArch)
 
 			svc = NewTemplateService("kubevirt/virt-launcher",
 				240,
@@ -151,6 +154,9 @@ var _ = Describe("Template", func() {
 			k8sClient := k8sfake.NewSimpleClientset()
 			virtClient.EXPECT().CoreV1().Return(k8sClient.CoreV1()).AnyTimes()
 			return config, kvStore, svc
+		}
+		configFactory = func(cpuArch string) (*virtconfig.ClusterConfig, cache.Store, *TemplateService) {
+			return configFactoryWithKV(cpuArch, kv)
 		}
 		nonRootUser = util.NonRootUID
 	})
@@ -190,6 +196,76 @@ var _ = Describe("Template", func() {
 
 			return vmi
 		}
+
+		Context("virt-launcher Pod characterization", func() {
+			newCharacterizationVMI := func() *v1.VirtualMachineInstance {
+				vmi := newMinimalWithContainerDisk("characterization")
+				vmi.UID = types.UID("characterization-uid")
+				vmi.Labels = map[string]string{
+					"characterization": "true",
+					logVerbosity:       "3",
+				}
+				sidecars, err := json.Marshal(hooks.HookSidecarList{
+					{
+						Image:           "example.com/hook-sidecar:v1",
+						ImagePullPolicy: k8sv1.PullIfNotPresent,
+						Command:         []string{"/usr/bin/hook-sidecar"},
+						Args:            []string{"--characterization"},
+					},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				vmi.Annotations[hooks.HookSidecarListAnnotationName] = string(sidecars)
+				vmi.Spec.Domain.CPU = &v1.CPU{
+					Cores:   2,
+					Sockets: 1,
+					Threads: 1,
+				}
+				vmi.Spec.ReadinessProbe = &v1.Probe{
+					Handler: v1.Handler{
+						Exec: &k8sv1.ExecAction{Command: []string{"/bin/true"}},
+					},
+				}
+				vmi.Spec.LivenessProbe = &v1.Probe{
+					Handler: v1.Handler{
+						Exec: &k8sv1.ExecAction{Command: []string{"/bin/true"}},
+					},
+				}
+				vmi.Spec.NodeSelector = map[string]string{"characterization-node": "true"}
+				vmi.Spec.SchedulerName = "characterization-scheduler"
+				vmi.Spec.ServiceAccountName = "characterization-service-account"
+				vmi.Spec.Tolerations = []k8sv1.Toleration{
+					{
+						Key:      "characterization",
+						Operator: k8sv1.TolerationOpEqual,
+						Value:    "true",
+						Effect:   k8sv1.TaintEffectNoSchedule,
+					},
+				}
+				vmi.Spec.TerminationGracePeriodSeconds = pointer.P(int64(30))
+				return vmi
+			}
+
+			DescribeTable("preserves the complete normalized manifest",
+				func(hypervisorName, hypervisorDevice, expectedDigest string) {
+					kvConfig := kv.DeepCopy()
+					kvConfig.Spec.Configuration.DeveloperConfiguration.FeatureGates = []string{featuregate.ConfigurableHypervisor}
+					kvConfig.Spec.Configuration.DeveloperConfiguration.UseEmulation = false
+					kvConfig.Spec.Configuration.Hypervisors = []v1.HypervisorConfiguration{{Name: hypervisorName}}
+					config, kvStore, svc = configFactoryWithKV(defaultArch, kvConfig)
+
+					pod, err := svc.RenderLaunchManifest(newCharacterizationVMI())
+					Expect(err).ToNot(HaveOccurred())
+					Expect(pod.Spec.Containers[0].Args).To(ContainElements("--hypervisor", hypervisorName))
+					Expect(pod.Spec.Containers[0].Resources.Limits).To(HaveKey(
+						k8sv1.ResourceName(K8sDevicePrefix + "/" + hypervisorDevice),
+					))
+
+					Expect(characterizationDigest(pod)).To(Equal(expectedDigest))
+				},
+				Entry("for libvirt/QEMU/KVM", v1.KvmHypervisorName, "kvm", "248d656741eadb395b974cea741b1466fed3d32f73043d6b6875a13b84525df2"),
+				Entry("for libvirt/QEMU/MSHV", v1.HyperVDirectHypervisorName, "mshv", "5663c9a9ced9f90651c4054da86228db17f379eeacdec30ca38c79345f94e742"),
+			)
+		})
 
 		Context("DRA network resource claims", func() {
 			const (
@@ -6315,6 +6391,22 @@ var _ = Describe("Template", func() {
 		})
 	})
 })
+
+func characterizationDigest(pod *k8sv1.Pod) string {
+	normalized := pod.DeepCopy()
+	for i := range normalized.Spec.Containers {
+		args := normalized.Spec.Containers[i].Args
+		for j := 0; j+1 < len(args); j++ {
+			if args[j] == "--qemu-timeout" {
+				args[j+1] = "<qemu-timeout>"
+			}
+		}
+	}
+
+	manifest, err := json.Marshal(normalized)
+	ExpectWithOffset(1, err).ToNot(HaveOccurred())
+	return fmt.Sprintf("%x", sha256.Sum256(manifest))
+}
 
 func networkInfoAnnotVolume() k8sv1.Volume {
 	netInfoAnnotFile := k8sv1.DownwardAPIVolumeFile{
