@@ -67,18 +67,10 @@ stringData:
             <ProtectYourPC>3</ProtectYourPC>
           </OOBE>
           <UserAccounts>
-            <LocalAccounts>
-              <LocalAccount wcm:action="add">
-                <Name>imageadmin</Name>
-                <DisplayName>Image Administrator</DisplayName>
-                <Description>First-boot image customization administrator</Description>
-                <Group>Administrators</Group>
-                <Password>
-                  <Value>P@ssw0rd!!</Value>
-                  <PlainText>true</PlainText>
-                </Password>
-              </LocalAccount>
-            </LocalAccounts>
+            <AdministratorPassword>
+              <Value>P@ssw0rd!!</Value>
+                <PlainText>true</PlainText>
+            </AdministratorPassword>
           </UserAccounts>
         </component>
       </settings>
