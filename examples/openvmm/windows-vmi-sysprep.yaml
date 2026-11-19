@@ -15,6 +15,29 @@ stringData:
   unattend.xml: |-
     <?xml version="1.0" encoding="utf-8"?>
     <unattend xmlns="urn:schemas-microsoft-com:unattend">
+      <settings pass="specialize">
+        <component name="Microsoft-Windows-Deployment"
+                   processorArchitecture="amd64"
+                   publicKeyToken="31bf3856ad364e35"
+                   language="neutral"
+                   versionScope="nonSxS"
+                   xmlns:wcm="http://microsoft.com"
+                   xmlns:xsi="http://w3.org">
+          <RunSynchronous>
+            <RunSynchronousCommand wcm:action="add">
+              <Order>1</Order>
+              <Description>Enable EMS in BCD</Description>
+              <Path>powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "bcdedit /ems on"</Path>
+            </RunSynchronousCommand>
+            <RunSynchronousCommand wcm:action="add">
+              <Order>2</Order>
+              <Description>Set EMS Port to 1</Description>
+              <Path>powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "bcdedit /emssettings EMSPORT:1"</Path>
+            </RunSynchronousCommand>
+          </RunSynchronous>
+        </component>
+      </settings>
+
       <settings pass="oobeSystem">
         <component name="Microsoft-Windows-International-Core"
                    processorArchitecture="amd64"
@@ -104,5 +127,5 @@ spec:
       secret:
         name: cloudbuild-unattend-datavolume-sysprep
   - name: rootdisk
-    persistentVolumeClaim:
-      claimName: local-vhd-pvc
+    dataVolume:
+      name: 1es-windows-vhd
