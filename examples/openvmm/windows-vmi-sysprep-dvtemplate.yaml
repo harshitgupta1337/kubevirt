@@ -1,0 +1,141 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudbuild-unattend-datavolume-sysprep
+type: Opaque
+stringData:
+  # KubeVirt requires this exact lowercase filename on sysprep media. This
+  # install-time answer file is intentionally empty for a generalized image.
+  autounattend.xml: |-
+    <?xml version="1.0" encoding="utf-8"?>
+    <unattend xmlns="urn:schemas-microsoft-com:unattend" />
+
+  # Windows uses unattend.xml while completing OOBE on a generalized image.
+  # Keep both password values identical after replacing the example value.
+  unattend.xml: |-
+    <?xml version="1.0" encoding="utf-8"?>
+    <unattend xmlns="urn:schemas-microsoft-com:unattend">
+      <settings pass="specialize">
+        <component name="Microsoft-Windows-Deployment"
+                   processorArchitecture="amd64"
+                   publicKeyToken="31bf3856ad364e35"
+                   language="neutral"
+                   versionScope="nonSxS"
+                   xmlns:wcm="http://microsoft.com"
+                   xmlns:xsi="http://w3.org">
+          <RunSynchronous>
+            <RunSynchronousCommand wcm:action="add">
+              <Order>1</Order>
+              <Description>Enable EMS in BCD</Description>
+              <Path>powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "bcdedit /ems on"</Path>
+            </RunSynchronousCommand>
+            <RunSynchronousCommand wcm:action="add">
+              <Order>2</Order>
+              <Description>Set EMS Port to 1</Description>
+              <Path>powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "bcdedit /emssettings EMSPORT:1"</Path>
+            </RunSynchronousCommand>
+          </RunSynchronous>
+        </component>
+      </settings>
+
+      <settings pass="oobeSystem">
+        <component name="Microsoft-Windows-International-Core"
+                   processorArchitecture="amd64"
+                   publicKeyToken="31bf3856ad364e35"
+                   language="neutral"
+                   versionScope="nonSxS"
+                   xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <InputLocale>en-US</InputLocale>
+          <SystemLocale>en-US</SystemLocale>
+          <UILanguage>en-US</UILanguage>
+          <UserLocale>en-US</UserLocale>
+        </component>
+        <component name="Microsoft-Windows-Shell-Setup"
+                   processorArchitecture="amd64"
+                   publicKeyToken="31bf3856ad364e35"
+                   language="neutral"
+                   versionScope="nonSxS"
+                   xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <OOBE>
+            <HideEULAPage>true</HideEULAPage>
+            <HideLocalAccountScreen>true</HideLocalAccountScreen>
+            <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+            <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+            <NetworkLocation>Work</NetworkLocation>
+            <ProtectYourPC>3</ProtectYourPC>
+          </OOBE>
+          <UserAccounts>
+            <AdministratorPassword>
+              <Value>P@ssw0rd!!</Value>
+                <PlainText>true</PlainText>
+            </AdministratorPassword>
+          </UserAccounts>
+        </component>
+      </settings>
+    </unattend>
+
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: cloudbuild00
+spec:
+  runStrategy: Always
+  template:
+    spec:
+      architecture: amd64
+      domain:
+        cpu:
+          cores: 4
+          model: host-model
+        devices:
+          disks:
+          - name: sysprep
+            cdrom:
+              bus: vmbus
+              readonly: true
+          - disk:
+              bus: vmbus
+            name: rootdisk
+          interfaces:
+          - bridge: {}
+            model: vmbus
+            name: default
+        features:
+          acpi:
+            enabled: true
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: false
+        memory:
+          guest: 4Gi
+      evictionStrategy: None
+      networks:
+      - name: default
+        pod: {}
+      volumes:
+      - name: sysprep
+        sysprep:
+          secret:
+            name: cloudbuild-unattend-datavolume-sysprep
+      - name: rootdisk
+        dataVolume:
+          name: 1es-windows-vhd
+
+  dataVolumeTemplates:
+  - metadata:
+      name: 1es-windows-vhd
+    spec:
+      pvc:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 180Gi
+        storageClassName: local
+      source:
+        registry:
+          url: docker://acrafoimages.azurecr.io/kubevirt-openvmm/windows-1es-image:vhd-11-18-2026
