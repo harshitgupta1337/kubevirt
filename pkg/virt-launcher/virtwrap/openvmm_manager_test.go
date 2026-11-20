@@ -20,6 +20,11 @@
 package virtwrap
 
 import (
+	"bufio"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -44,6 +49,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/safepath"
 	"kubevirt.io/kubevirt/pkg/storage/volumepath"
+	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/agent"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 )
 
@@ -736,5 +742,216 @@ var _ = Describe("OpenVMM manager", func() {
 			Expect(err).ToNot(HaveOccurred())
 		}
 		Expect(starts.Load()).To(Equal(int32(1)))
+	})
+
+	Describe("guest execution", func() {
+		newRunningManager := func() *OpenVMMDomainManager {
+			manager, _ := newManager(GinkgoT().TempDir())
+			domain, _, err := manager.buildDomainAndCommand(newVMI(), nil)
+			Expect(err).ToNot(HaveOccurred())
+			manager.domain = domain
+			manager.state = openVMMRunning
+			return manager
+		}
+
+		startGuestAgent := func(manager *OpenVMMDomainManager, handler func(net.Conn, *json.Decoder)) {
+			listener, err := net.Listen("unix", filepath.Join(manager.socketsDir, openVMMCOM2Socket))
+			Expect(err).ToNot(HaveOccurred())
+			done := make(chan struct{})
+			DeferCleanup(func() {
+				Expect(listener.Close()).To(Succeed())
+				Eventually(done).Should(BeClosed())
+			})
+			go func() {
+				defer GinkgoRecover()
+				defer close(done)
+				conn, err := listener.Accept()
+				Expect(err).ToNot(HaveOccurred())
+				defer conn.Close()
+				Expect(conn.SetDeadline(time.Now().Add(5 * time.Second))).To(Succeed())
+				reader := bufio.NewReader(conn)
+				delimiter, err := reader.ReadByte()
+				Expect(err).ToNot(HaveOccurred())
+				Expect(delimiter).To(Equal(byte(0xff)))
+				decoder := json.NewDecoder(reader)
+				var request struct {
+					Execute   string `json:"execute"`
+					Arguments struct {
+						ID int64 `json:"id"`
+					} `json:"arguments"`
+				}
+				Expect(decoder.Decode(&request)).To(Succeed())
+				Expect(request.Execute).To(Equal("guest-sync-delimited"))
+				_, err = fmt.Fprintf(conn, "stale partial response\n{\"return\":{\"pid\":999}}\n\xff{\"return\":0}\n\xff{\"return\":%d}\n", request.Arguments.ID)
+				Expect(err).ToNot(HaveOccurred())
+				handler(conn, decoder)
+			}()
+		}
+
+		It("waits for replies, polls the returned PID, and decodes stdout", func() {
+			manager := newRunningManager()
+			command := `C:\Windows\System32\cmd.exe`
+			args := []string{"/c", "echo \"hello\"\nnext", `C:\Program Files\app`}
+			startGuestAgent(manager, func(conn net.Conn, decoder *json.Decoder) {
+				var request struct {
+					Execute   string `json:"execute"`
+					Arguments struct {
+						Path          string   `json:"path"`
+						Arg           []string `json:"arg"`
+						CaptureOutput bool     `json:"capture-output"`
+					} `json:"arguments"`
+				}
+				Expect(decoder.Decode(&request)).To(Succeed())
+				Expect(request.Execute).To(Equal("guest-exec"))
+				Expect(request.Arguments.Path).To(Equal(command))
+				Expect(request.Arguments.Arg).To(Equal(args))
+				Expect(request.Arguments.CaptureOutput).To(BeTrue())
+				_, err := io.WriteString(conn, `{"return":`)
+				Expect(err).ToNot(HaveOccurred())
+				time.Sleep(30 * time.Millisecond)
+				_, err = io.WriteString(conn, "{\"pid\":42}}\n")
+				Expect(err).ToNot(HaveOccurred())
+				for i := range 2 {
+					var statusRequest struct {
+						Execute   string `json:"execute"`
+						Arguments struct {
+							PID int `json:"pid"`
+						} `json:"arguments"`
+					}
+					Expect(decoder.Decode(&statusRequest)).To(Succeed())
+					Expect(statusRequest.Execute).To(Equal("guest-exec-status"))
+					Expect(statusRequest.Arguments.PID).To(Equal(42))
+					if i == 0 {
+						_, err = io.WriteString(conn, "{\"return\":{\"exited\":false}}\n")
+					} else {
+						_, err = fmt.Fprintf(conn, "{\"return\":{\"exited\":true,\"exitcode\":0,\"out-data\":%q}}\n", base64.StdEncoding.EncodeToString([]byte("guest output\r\n")))
+					}
+					Expect(err).ToNot(HaveOccurred())
+				}
+			})
+
+			output, err := manager.Exec(manager.domain.Spec.Name, command, args, 2)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(output).To(Equal("guest output\r\n"))
+		})
+
+		DescribeTable("propagates guest and protocol failures",
+			func(execReply, statusReply, expectedOutput, expectedError string, expectedExitCode int) {
+				manager := newRunningManager()
+				startGuestAgent(manager, func(conn net.Conn, decoder *json.Decoder) {
+					var request json.RawMessage
+					Expect(decoder.Decode(&request)).To(Succeed())
+					_, err := io.WriteString(conn, execReply+"\n")
+					Expect(err).ToNot(HaveOccurred())
+					if statusReply != "" {
+						Expect(decoder.Decode(&request)).To(Succeed())
+						_, err = io.WriteString(conn, statusReply+"\n")
+						Expect(err).ToNot(HaveOccurred())
+					}
+				})
+
+				output, err := manager.Exec(manager.domain.Spec.Name, "cmd.exe", nil, 2)
+				Expect(output).To(Equal(expectedOutput))
+				if expectedExitCode != 0 {
+					var exitCode agent.ExecExitCode
+					Expect(errors.As(err, &exitCode)).To(BeTrue())
+					Expect(exitCode.ExitCode).To(Equal(expectedExitCode))
+				} else {
+					Expect(err).To(MatchError(ContainSubstring(expectedError)))
+				}
+			},
+			Entry("nonzero exit code retains stdout", `{"return":{"pid":42}}`, `{"return":{"exited":true,"exitcode":7,"out-data":"b3V0cHV0"}}`, "output", "", 7),
+			Entry("invalid PID", `{"return":{"pid":0}}`, "", "", "Invalid pid", 0),
+			Entry("guest-exec error", `{"error":{"class":"GenericError","desc":"command not found"}}`, "", "", "command not found", 0),
+			Entry("guest-exec-status error", `{"return":{"pid":42}}`, `{"error":{"class":"GenericError","desc":"PID not found"}}`, "", "PID not found", 0),
+			Entry("missing return value", `{}`, "", "", "no return value", 0),
+			Entry("malformed JSON", `not-json`, "", "", "reading OpenVMM guest agent response", 0),
+			Entry("invalid base64", `{"return":{"pid":42}}`, `{"return":{"exited":true,"exitcode":0,"out-data":"!!!"}}`, "", "illegal base64", 0),
+		)
+
+		It("times out when the guest agent does not respond", func() {
+			manager := newRunningManager()
+			startGuestAgent(manager, func(conn net.Conn, decoder *json.Decoder) {
+				var request json.RawMessage
+				Expect(decoder.Decode(&request)).To(Succeed())
+				Expect(decoder.Decode(&request)).To(MatchError(io.EOF))
+			})
+
+			start := time.Now()
+			_, err := manager.Exec(manager.domain.Spec.Name, "cmd.exe", nil, 1)
+			var netErr net.Error
+			Expect(errors.As(err, &netErr)).To(BeTrue())
+			Expect(netErr.Timeout()).To(BeTrue())
+			Expect(time.Since(start)).To(BeNumerically("<", 1500*time.Millisecond))
+		})
+
+		It("times out polling a command that does not exit", func() {
+			manager := newRunningManager()
+			startGuestAgent(manager, func(conn net.Conn, decoder *json.Decoder) {
+				var request json.RawMessage
+				Expect(decoder.Decode(&request)).To(Succeed())
+				_, err := io.WriteString(conn, "{\"return\":{\"pid\":42}}\n")
+				Expect(err).ToNot(HaveOccurred())
+				for {
+					err := decoder.Decode(&request)
+					if errors.Is(err, io.EOF) {
+						return
+					}
+					Expect(err).ToNot(HaveOccurred())
+					_, err = io.WriteString(conn, "{\"return\":{\"exited\":false}}\n")
+					Expect(err).ToNot(HaveOccurred())
+				}
+			})
+
+			start := time.Now()
+			_, err := manager.Exec(manager.domain.Spec.Name, "cmd.exe", nil, 1)
+			Expect(err).To(MatchError(ContainSubstring("Timed out waiting for guest pid [42]")))
+			Expect(time.Since(start)).To(BeNumerically("<", 1500*time.Millisecond))
+		})
+
+		It("bounds waiting for another Exec call by the caller's timeout", func() {
+			manager := newRunningManager()
+			manager.guestExecLock <- struct{}{}
+			defer func() { <-manager.guestExecLock }()
+
+			start := time.Now()
+			_, err := manager.Exec(manager.domain.Spec.Name, "cmd.exe", nil, 1)
+			Expect(err).To(MatchError(ContainSubstring("waiting for OpenVMM guest agent")))
+			Expect(time.Since(start)).To(BeNumerically("<", 1500*time.Millisecond))
+		})
+
+		It("reports a disconnected guest agent instead of successful empty output", func() {
+			manager := newRunningManager()
+			startGuestAgent(manager, func(conn net.Conn, decoder *json.Decoder) {
+				var request json.RawMessage
+				Expect(decoder.Decode(&request)).To(Succeed())
+			})
+
+			_, err := manager.Exec(manager.domain.Spec.Name, "cmd.exe", nil, 2)
+			Expect(errors.Is(err, io.EOF)).To(BeTrue())
+		})
+
+		It("rejects an invalid timeout without connecting", func() {
+			manager := newRunningManager()
+			for _, timeout := range []int32{0, -1} {
+				_, err := manager.Exec(manager.domain.Spec.Name, "cmd.exe", nil, timeout)
+				Expect(err).To(MatchError("guest execution timeout must be positive"))
+			}
+		})
+
+		It("reports an unavailable socket", func() {
+			manager := newRunningManager()
+			_, err := manager.Exec(manager.domain.Spec.Name, "cmd.exe", nil, 1)
+			Expect(err).To(MatchError(ContainSubstring("connecting to OpenVMM guest agent")))
+		})
+
+		It("does not execute in a different or stopped domain", func() {
+			manager := newRunningManager()
+			_, err := manager.Exec("other-domain", "cmd.exe", nil, 1)
+			Expect(err).To(MatchError(ContainSubstring("is not running")))
+			manager.state = openVMMStopped
+			_, err = manager.Exec(manager.domain.Spec.Name, "cmd.exe", nil, 1)
+			Expect(err).To(MatchError(ContainSubstring("is not running")))
+		})
 	})
 })

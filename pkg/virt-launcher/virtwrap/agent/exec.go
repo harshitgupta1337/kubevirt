@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/cli"
@@ -37,18 +39,37 @@ func (e ExecExitCode) Error() string {
 // GuestExec sends the provided command and args to the guest agent for execution and returns an error on an unsucessful exit code
 // The resulting stdout will be returned as a string
 func GuestExec(virConn cli.Connection, domName string, command string, args []string, timeoutSeconds int32) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
+	return GuestExecWithCommand(ctx, command, args, timeoutSeconds, func(cmd string) (string, error) {
+		return virConn.QemuAgentCommand(cmd, domName)
+	})
+}
+
+// GuestExecWithCommand executes through the supplied guest agent transport.
+func GuestExecWithCommand(ctx context.Context, command string, args []string, timeoutSeconds int32, runCommand func(string) (string, error)) (string, error) {
+	if timeoutSeconds <= 0 {
+		return "", fmt.Errorf("guest execution timeout must be positive")
+	}
 	stdOut := ""
-	argsStr := ""
+	encodedCommand, err := json.Marshal(command)
+	if err != nil {
+		return "", err
+	}
+	encodedArgs := make([]string, 0, len(args))
 	for _, arg := range args {
-		if argsStr == "" {
-			argsStr = fmt.Sprintf("\"%s\"", arg)
-		} else {
-			argsStr = argsStr + fmt.Sprintf(", \"%s\"", arg)
+		encodedArg, err := json.Marshal(arg)
+		if err != nil {
+			return "", err
 		}
+		encodedArgs = append(encodedArgs, string(encodedArg))
 	}
 
-	cmdExec := fmt.Sprintf(`{"execute": "guest-exec", "arguments": { "path": "%s", "arg": [ %s ], "capture-output":true } }`, command, argsStr)
-	output, err := virConn.QemuAgentCommand(cmdExec, domName)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	cmdExec := fmt.Sprintf(`{"execute": "guest-exec", "arguments": { "path": %s, "arg": [ %s ], "capture-output":true } }`, encodedCommand, strings.Join(encodedArgs, ", "))
+	output, err := runCommand(cmdExec)
 	if err != nil {
 		return "", err
 	}
@@ -66,12 +87,20 @@ func GuestExec(virConn cli.Connection, domName string, command string, args []st
 	exitCode := 0
 	statusCheck := time.NewTicker(time.Duration(timeoutSeconds) * 100 * time.Millisecond)
 	defer statusCheck.Stop()
-	checkUntil := time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
-
+	checkUntil, hasDeadline := ctx.Deadline()
+	timedOut := func() bool {
+		return ctx.Err() != nil || (hasDeadline && !time.Now().Before(checkUntil))
+	}
 	for {
+		if timedOut() {
+			break
+		}
 		cmdExecStatus := fmt.Sprintf(`{"execute": "guest-exec-status", "arguments": { "pid": %d } }`, execRes.Return.Pid)
-		output, err := virConn.QemuAgentCommand(cmdExecStatus, domName)
+		output, err := runCommand(cmdExecStatus)
 		if err != nil {
+			if timedOut() {
+				return "", fmt.Errorf("Timed out waiting for guest pid [%d] for command [%s] to exit: %w", execRes.Return.Pid, command, err)
+			}
 			return "", err
 		}
 		execStatusRes := &execStatusReturn{}
@@ -91,8 +120,9 @@ func GuestExec(virConn cli.Connection, domName string, command string, args []st
 			break
 		}
 
-		if checkUntil.Before(<-statusCheck.C) {
-			break
+		select {
+		case <-ctx.Done():
+		case <-statusCheck.C:
 		}
 	}
 

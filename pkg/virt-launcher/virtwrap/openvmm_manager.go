@@ -116,6 +116,7 @@ type OpenVMMDomainManager struct {
 	imageVolumeEnabled    bool
 	consoleDir            string
 	socketsDir            string
+	guestExecLock         chan struct{}
 	networkSetup          func(*v1.VirtualMachineInstance, *api.Domain, *cmdv1.VirtualMachineOptions) (string, error)
 	prepareProvisioning   func(*v1.VirtualMachineInstance) error
 	cloudInitIsoPath      func(cloudinit.DataSourceType, string, string) string
@@ -140,6 +141,7 @@ func NewOpenVMMDomainManager(pidDir string, notifier domainEventNotifier, events
 		imageVolumeEnabled:    imageVolumeEnabled,
 		consoleDir:            openVMMConsoleDir,
 		socketsDir:            cmdclient.SocketsDirectory(),
+		guestExecLock:         make(chan struct{}, 1),
 		cloudInitIsoPath:      cloudinit.GetIsoFilePath,
 		sysprepDiskPath:       config.GetSysprepDiskPath,
 		vncTargetAddress:      net.JoinHostPort(vncForwarderTargetAddress, openVMMVNCPort),
@@ -867,10 +869,9 @@ func (l *OpenVMMDomainManager) CancelVMIMigration(*v1.VirtualMachineInstance) er
 func (l *OpenVMMDomainManager) FinalizeVirtualMachineMigration(*v1.VirtualMachineInstance, *cmdv1.VirtualMachineOptions) error {
 	return nil
 }
-func (l *OpenVMMDomainManager) HotplugHostDevices(*v1.VirtualMachineInstance) error  { return nil }
-func (l *OpenVMMDomainManager) Exec(string, string, []string, int32) (string, error) { return "", nil }
-func (l *OpenVMMDomainManager) GuestPing(string) error                               { return nil }
-func (l *OpenVMMDomainManager) MemoryDump(*v1.VirtualMachineInstance, string) error  { return nil }
+func (l *OpenVMMDomainManager) HotplugHostDevices(*v1.VirtualMachineInstance) error { return nil }
+func (l *OpenVMMDomainManager) GuestPing(string) error                              { return nil }
+func (l *OpenVMMDomainManager) MemoryDump(*v1.VirtualMachineInstance, string) error { return nil }
 func (l *OpenVMMDomainManager) BackupVirtualMachine(*v1.VirtualMachineInstance, *backupv1.BackupOptions) error {
 	return nil
 }
