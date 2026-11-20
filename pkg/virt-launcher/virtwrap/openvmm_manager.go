@@ -66,6 +66,7 @@ const (
 	openVMMAArch64UEFITemplatePath = "/openvmm/uefi-templates/aarch64.json"
 	openVMMConsoleDir              = "/var/run/kubevirt-private"
 	openVMMStderrFile              = "openvmm.stderr.log"
+	openVMMCOM2Socket              = "openvmm-com2.sock"
 	// This is the address on which OpenVMM process's VNC server listens on
 	openVMMVNCListenAddress = "0.0.0.0"
 	// This is the address to which the VNC proxy will connect to forward VNC connections to the OpenVMM process
@@ -114,6 +115,7 @@ type OpenVMMDomainManager struct {
 	imageVolumeKernelPath func(string) (*safepath.Path, error)
 	imageVolumeEnabled    bool
 	consoleDir            string
+	socketsDir            string
 	networkSetup          func(*v1.VirtualMachineInstance, *api.Domain, *cmdv1.VirtualMachineOptions) (string, error)
 	prepareProvisioning   func(*v1.VirtualMachineInstance) error
 	cloudInitIsoPath      func(cloudinit.DataSourceType, string, string) string
@@ -137,6 +139,7 @@ func NewOpenVMMDomainManager(pidDir string, notifier domainEventNotifier, events
 		imageVolumeKernelPath: getKernelBootArtifactPathFromImageVolumeView,
 		imageVolumeEnabled:    imageVolumeEnabled,
 		consoleDir:            openVMMConsoleDir,
+		socketsDir:            cmdclient.SocketsDirectory(),
 		cloudInitIsoPath:      cloudinit.GetIsoFilePath,
 		sysprepDiskPath:       config.GetSysprepDiskPath,
 		vncTargetAddress:      net.JoinHostPort(vncForwarderTargetAddress, openVMMVNCPort),
@@ -368,6 +371,10 @@ func (l *OpenVMMDomainManager) buildDomainAndCommand(vmi *v1.VirtualMachineInsta
 	if err := os.MkdirAll(filepath.Dir(consolePath), 0755); err != nil {
 		return nil, nil, fmt.Errorf("failed to create OpenVMM console directory: %w", err)
 	}
+	com2Path := filepath.Join(l.socketsDir, openVMMCOM2Socket)
+	if err := os.MkdirAll(l.socketsDir, 0755); err != nil {
+		return nil, nil, fmt.Errorf("failed to create OpenVMM socket directory: %w", err)
+	}
 
 	args := []string{}
 	if uefiBoot {
@@ -463,6 +470,7 @@ func (l *OpenVMMDomainManager) buildDomainAndCommand(vmi *v1.VirtualMachineInsta
 		}
 	}
 	args = append(args, "--com1", "listen="+consolePath)
+	args = append(args, "--com2", "listen="+com2Path)
 
 	return domain, args, nil
 }

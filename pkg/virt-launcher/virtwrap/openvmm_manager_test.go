@@ -80,6 +80,7 @@ var _ = Describe("OpenVMM manager", func() {
 		manager.diskPath = func(int) string { return diskPath }
 		manager.kernelPath = func(string) string { return kernelPath }
 		manager.consoleDir = filepath.Join(tempDir, "console")
+		manager.socketsDir = filepath.Join(tempDir, "sockets")
 		return manager, diskPath
 	}
 
@@ -127,6 +128,46 @@ var _ = Describe("OpenVMM manager", func() {
 
 	It("uses the default logging policy without launcher options", func() {
 		Expect(openVMMSerialLogEnabled(newVMI(), nil)).To(BeTrue())
+	})
+
+	DescribeTable("always configures COM2 to listen on a UNIX socket",
+		func(uefiBoot, serialConsoleEnabled bool) {
+			manager, _ := newManager(GinkgoT().TempDir())
+			vmi := newVMI()
+			if uefiBoot {
+				vmi.Spec.Domain.Firmware = &v1.Firmware{
+					Bootloader: &v1.Bootloader{EFI: &v1.EFI{SecureBoot: pointer.P(false)}},
+				}
+			}
+			vmi.Spec.Domain.Devices.AutoattachSerialConsole = pointer.P(serialConsoleEnabled)
+			vmi.Spec.Domain.Devices.LogSerialConsole = pointer.P(false)
+			vmi.Spec.Domain.Devices.AutoattachGraphicsDevice = pointer.P(false)
+			options := &cmdv1.VirtualMachineOptions{ClusterConfig: &cmdv1.ClusterConfig{
+				SerialConsoleLogDisabled: true,
+			}}
+
+			_, args, err := manager.buildDomainAndCommand(vmi, options)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(args[len(args)-4:]).To(Equal([]string{
+				"--com1", "listen=" + filepath.Join(manager.consoleDir, "test-uid", openVMMSerialSocket),
+				"--com2", "listen=" + filepath.Join(manager.socketsDir, openVMMCOM2Socket),
+			}))
+			info, err := os.Stat(manager.socketsDir)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(info.IsDir()).To(BeTrue())
+		},
+		Entry("kernel boot with serial console enabled", false, true),
+		Entry("kernel boot with serial console disabled", false, false),
+		Entry("UEFI boot with serial console enabled", true, true),
+		Entry("UEFI boot with serial console disabled", true, false),
+	)
+
+	It("reports failure to create the COM2 socket directory", func() {
+		manager, diskPath := newManager(GinkgoT().TempDir())
+		manager.socketsDir = filepath.Join(diskPath, "sockets")
+
+		_, _, err := manager.buildDomainAndCommand(newVMI(), nil)
+		Expect(err).To(MatchError(ContainSubstring("failed to create OpenVMM socket directory")))
 	})
 
 	It("rolls back the serial broker when OpenVMM cannot start", func() {
