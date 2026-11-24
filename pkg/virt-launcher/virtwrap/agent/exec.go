@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"kubevirt.io/client-go/log"
+
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/cli"
 )
 
@@ -22,8 +24,8 @@ type execStatusReturn struct {
 	Return execStatusReturnData `json:"return"`
 }
 type execStatusReturnData struct {
-	Exited   bool   `json:"exited"`
-	ExitCode int    `json:"exitcode"`
+	Exited   *bool  `json:"exited"`
+	ExitCode *int   `json:"exitcode"`
 	OutData  string `json:"out-data"`
 }
 
@@ -69,19 +71,23 @@ func GuestExecWithCommand(ctx context.Context, command string, args []string, ti
 		return "", err
 	}
 	cmdExec := fmt.Sprintf(`{"execute": "guest-exec", "arguments": { "path": %s, "arg": [ %s ], "capture-output":true } }`, encodedCommand, strings.Join(encodedArgs, ", "))
+	log.Log.V(4).Infof("Sending guest-exec for command %q with timeout %ds", command, timeoutSeconds)
 	output, err := runCommand(cmdExec)
 	if err != nil {
+		log.Log.Reason(err).V(4).Infof("guest-exec failed for command %q", command)
 		return "", err
 	}
+	log.Log.V(5).Infof("guest-exec response for command %q: %s", command, output)
 	execRes := &execReturn{}
 	err = json.Unmarshal([]byte(output), execRes)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("guest-exec command %q failed: invalid QEMU guest agent response: %w", command, err)
 	}
 
 	if execRes.Return.Pid <= 0 {
-		return "", fmt.Errorf("Invalid pid [%d] returned from qemu agent during access credential injection: %s", execRes.Return.Pid, output)
+		return "", fmt.Errorf("guest-exec command %q failed: expected a positive PID in QEMU guest agent response: %s", command, output)
 	}
+	log.Log.V(4).Infof("Received guest-exec PID %d for command %q; waiting for completion", execRes.Return.Pid, command)
 
 	exited := false
 	exitCode := 0
@@ -96,27 +102,38 @@ func GuestExecWithCommand(ctx context.Context, command string, args []string, ti
 			break
 		}
 		cmdExecStatus := fmt.Sprintf(`{"execute": "guest-exec-status", "arguments": { "pid": %d } }`, execRes.Return.Pid)
+		log.Log.V(5).Infof("Sending guest-exec-status for PID %d, command %q", execRes.Return.Pid, command)
 		output, err := runCommand(cmdExecStatus)
 		if err != nil {
+			log.Log.Reason(err).V(4).Infof("guest-exec-status failed for PID %d, command %q", execRes.Return.Pid, command)
 			if timedOut() {
 				return "", fmt.Errorf("Timed out waiting for guest pid [%d] for command [%s] to exit: %w", execRes.Return.Pid, command, err)
 			}
 			return "", err
 		}
+		log.Log.V(5).Infof("guest-exec-status response for PID %d, command %q: %s", execRes.Return.Pid, command, output)
 		execStatusRes := &execStatusReturn{}
 		err = json.Unmarshal([]byte(output), execStatusRes)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("guest-exec-status for pid [%d] failed: invalid QEMU guest agent response: %w", execRes.Return.Pid, err)
 		}
 
-		if execStatusRes.Return.Exited {
+		if execStatusRes.Return.Exited == nil {
+			return "", fmt.Errorf("guest-exec-status for pid [%d] failed: missing exited field in QEMU guest agent response: %s", execRes.Return.Pid, output)
+		}
+		if *execStatusRes.Return.Exited {
+			if execStatusRes.Return.ExitCode == nil || *execStatusRes.Return.ExitCode < 0 {
+				return "", fmt.Errorf("guest-exec-status for pid [%d] failed: missing or invalid exit code in QEMU guest agent response: %s", execRes.Return.Pid, output)
+			}
 			stdOutBytes, err := base64.StdEncoding.DecodeString(execStatusRes.Return.OutData)
 			if err != nil {
 				return "", err
 			}
 			stdOut = string(stdOutBytes)
-			exitCode = execStatusRes.Return.ExitCode
+			exitCode = *execStatusRes.Return.ExitCode
 			exited = true
+			log.Log.V(4).Infof("Guest command %q, PID %d exited with code %d", command, execRes.Return.Pid, exitCode)
+			log.Log.V(5).Infof("Guest command %q, PID %d stdout: %q", command, execRes.Return.Pid, stdOut)
 			break
 		}
 
@@ -127,6 +144,7 @@ func GuestExecWithCommand(ctx context.Context, command string, args []string, ti
 	}
 
 	if !exited {
+		log.Log.V(4).Infof("Timed out waiting for guest PID %d, command %q", execRes.Return.Pid, command)
 		return "", fmt.Errorf("Timed out waiting for guest pid [%d] for command [%s] to exit", execRes.Return.Pid, command)
 	} else if exitCode != 0 {
 		return stdOut, ExecExitCode{exitCode}

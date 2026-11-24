@@ -20,7 +20,6 @@
 package virtwrap
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -28,6 +27,8 @@ import (
 	"net"
 	"path/filepath"
 	"time"
+
+	"kubevirt.io/client-go/log"
 
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/agent"
 )
@@ -54,8 +55,10 @@ func (l *OpenVMMDomainManager) Exec(domainName, command string, args []string, t
 		return "", fmt.Errorf("OpenVMM domain %q is not running", domainName)
 	}
 
+	log.Log.V(4).Infof("Connecting to OpenVMM guest agent socket %s for domain %q", socketPath, domainName)
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 	if err != nil {
+		log.Log.Reason(err).V(4).Infof("Failed to connect to OpenVMM guest agent socket %s", socketPath)
 		return "", fmt.Errorf("connecting to OpenVMM guest agent at %s: %w", socketPath, err)
 	}
 	defer conn.Close()
@@ -64,10 +67,8 @@ func (l *OpenVMMDomainManager) Exec(domainName, command string, args []string, t
 		return "", fmt.Errorf("setting OpenVMM guest agent deadline: %w", err)
 	}
 
-	client := &openVMMGuestAgentClient{conn: conn}
-	if err := client.synchronize(); err != nil {
-		return "", fmt.Errorf("synchronizing OpenVMM guest agent: %w", err)
-	}
+	client := &openVMMGuestAgentClient{conn: conn, decoder: json.NewDecoder(conn)}
+	log.Log.V(4).Infof("Connected to OpenVMM guest agent socket %s for domain %q; executing command %q", socketPath, domainName, command)
 	return agent.GuestExecWithCommand(ctx, command, args, timeoutSeconds, client.command)
 }
 
@@ -76,50 +77,11 @@ type openVMMGuestAgentClient struct {
 	decoder *json.Decoder
 }
 
-func (c *openVMMGuestAgentClient) synchronize() error {
-	id := time.Now().UnixNano()
-	// The delimiter resets a partial request in the agent and marks the response
-	// after any stale data left on the serial stream by a previous connection.
-	request := fmt.Sprintf("\xff{\"execute\":\"guest-sync-delimited\",\"arguments\":{\"id\":%d}}\n", id)
-	if _, err := io.WriteString(c.conn, request); err != nil {
-		return err
-	}
-	reader := bufio.NewReader(c.conn)
-	for {
-		for {
-			b, err := reader.ReadByte()
-			if err != nil {
-				return err
-			}
-			if b == 0xff {
-				break
-			}
-		}
-		line, err := reader.ReadBytes('\n')
-		if err != nil {
-			return err
-		}
-		response, err := parseOpenVMMGuestAgentResponse(line)
-		if err != nil {
-			return err
-		}
-		var result struct {
-			Return int64 `json:"return"`
-		}
-		if err := json.Unmarshal([]byte(response), &result); err != nil {
-			return err
-		}
-		if result.Return == id {
-			c.decoder = json.NewDecoder(reader)
-			return nil
-		}
-	}
-}
-
 func (c *openVMMGuestAgentClient) command(request string) (string, error) {
 	if _, err := io.WriteString(c.conn, request+"\n"); err != nil {
 		return "", fmt.Errorf("sending OpenVMM guest agent command: %w", err)
 	}
+	log.Log.V(4).Info("Sent OpenVMM guest agent request; awaiting reply")
 	response, err := c.readResponse()
 	if err != nil {
 		return "", fmt.Errorf("reading OpenVMM guest agent response: %w", err)

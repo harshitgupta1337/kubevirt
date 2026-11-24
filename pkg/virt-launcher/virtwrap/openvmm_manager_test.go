@@ -20,7 +20,6 @@
 package virtwrap
 
 import (
-	"bufio"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -769,26 +768,11 @@ var _ = Describe("OpenVMM manager", func() {
 				Expect(err).ToNot(HaveOccurred())
 				defer conn.Close()
 				Expect(conn.SetDeadline(time.Now().Add(5 * time.Second))).To(Succeed())
-				reader := bufio.NewReader(conn)
-				delimiter, err := reader.ReadByte()
-				Expect(err).ToNot(HaveOccurred())
-				Expect(delimiter).To(Equal(byte(0xff)))
-				decoder := json.NewDecoder(reader)
-				var request struct {
-					Execute   string `json:"execute"`
-					Arguments struct {
-						ID int64 `json:"id"`
-					} `json:"arguments"`
-				}
-				Expect(decoder.Decode(&request)).To(Succeed())
-				Expect(request.Execute).To(Equal("guest-sync-delimited"))
-				_, err = fmt.Fprintf(conn, "stale partial response\n{\"return\":{\"pid\":999}}\n\xff{\"return\":0}\n\xff{\"return\":%d}\n", request.Arguments.ID)
-				Expect(err).ToNot(HaveOccurred())
-				handler(conn, decoder)
+				handler(conn, json.NewDecoder(conn))
 			}()
 		}
 
-		It("waits for replies, polls the returned PID, and decodes stdout", func() {
+		It("sends guest-exec without a handshake, waits for replies, polls the returned PID, and decodes stdout", func() {
 			manager := newRunningManager()
 			command := `C:\Windows\System32\cmd.exe`
 			args := []string{"/c", "echo \"hello\"\nnext", `C:\Program Files\app`}
@@ -861,7 +845,14 @@ var _ = Describe("OpenVMM manager", func() {
 				}
 			},
 			Entry("nonzero exit code retains stdout", `{"return":{"pid":42}}`, `{"return":{"exited":true,"exitcode":7,"out-data":"b3V0cHV0"}}`, "output", "", 7),
-			Entry("invalid PID", `{"return":{"pid":0}}`, "", "", "Invalid pid", 0),
+			Entry("invalid PID", `{"return":{"pid":0}}`, "", "", "expected a positive PID", 0),
+			Entry("missing PID", `{"return":{}}`, "", "", "expected a positive PID", 0),
+			Entry("null PID", `{"return":{"pid":null}}`, "", "", "expected a positive PID", 0),
+			Entry("echoed request instead of a reply", `{"execute":"guest-exec","arguments":{"path":"cmd.exe"}}`, "", "", "no return value", 0),
+			Entry("missing exited field", `{"return":{"pid":42}}`, `{"return":{"exitcode":0}}`, "", "missing exited field", 0),
+			Entry("missing exit code", `{"return":{"pid":42}}`, `{"return":{"exited":true}}`, "", "missing or invalid exit code", 0),
+			Entry("null exit code", `{"return":{"pid":42}}`, `{"return":{"exited":true,"exitcode":null}}`, "", "missing or invalid exit code", 0),
+			Entry("signal without an exit code", `{"return":{"pid":42}}`, `{"return":{"exited":true,"signal":9}}`, "", "missing or invalid exit code", 0),
 			Entry("guest-exec error", `{"error":{"class":"GenericError","desc":"command not found"}}`, "", "", "command not found", 0),
 			Entry("guest-exec-status error", `{"return":{"pid":42}}`, `{"error":{"class":"GenericError","desc":"PID not found"}}`, "", "PID not found", 0),
 			Entry("missing return value", `{}`, "", "", "no return value", 0),
