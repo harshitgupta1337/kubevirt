@@ -11,7 +11,7 @@ accordingly. COM2 remains available even when serial console attachment or
 logging is disabled. The existing COM1 console and logging are unchanged.
 
 Guest command execution connects directly to this socket using QEMU GA's
-`guest-exec` and `guest-exec-status` commands, returning base64-decoded stdout
+`guest-exec` and `guest-exec-status` commands, returning base64-decoded guest stderr
 and the guest exit code. The guest must run QEMU GA on COM2. Each Exec sends
 `guest-exec` directly without a synchronization handshake and keeps the
 connection open while awaiting replies; no `socat` dependency is required.
@@ -19,6 +19,13 @@ There is no synchronization-based protection against stale serial replies
 from previous connections. Exec calls are serialized, and the positive
 timeout in seconds covers waiting for COM2, connecting, and receiving results.
 A timeout stops waiting; it does not terminate the command in the guest.
+
+The existing Exec output field carries guest stderr (`err-data`), not stdout
+(`out-data`), for both OpenVMM and libvirt. The probe prints this output, so
+kubelet can include it in readiness/liveness `Unhealthy` events. Pod Ready
+conditions retain Kubernetes' standard readiness failure message.
+This also affects non-probe callers of the shared guest-exec helper that
+previously consumed stdout, such as access-credential user lookup.
 
 An exec probe succeeds only after a reply containing a positive PID, followed
 by a status reply with `exited: true` and an explicit `exitcode: 0`. Writing to
@@ -28,8 +35,8 @@ This checks the QEMU GA protocol, not the identity of the socket peer.
 
 Launcher log verbosity 4 records socket connection,
 request submission, received PIDs, completion, and timeouts. Verbosity 5 also
-prints guest-agent JSON replies, polling requests, and decoded stdout. Enable
-verbosity 5 only when needed: replies and stdout may contain sensitive data.
+prints guest-agent JSON replies, polling requests, and decoded stderr. Enable
+verbosity 5 only when needed: replies and guest output may contain sensitive data.
 Command arguments are not logged.
 
 ## OpenVMM VMI validation

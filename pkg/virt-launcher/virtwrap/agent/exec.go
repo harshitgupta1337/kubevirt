@@ -26,7 +26,7 @@ type execStatusReturn struct {
 type execStatusReturnData struct {
 	Exited   *bool  `json:"exited"`
 	ExitCode *int   `json:"exitcode"`
-	OutData  string `json:"out-data"`
+	OutData  string `json:"err-data"`
 }
 
 // ExecExitCode returned at non-zero return codes
@@ -39,7 +39,7 @@ func (e ExecExitCode) Error() string {
 }
 
 // GuestExec sends the provided command and args to the guest agent for execution and returns an error on an unsucessful exit code
-// The resulting stdout will be returned as a string
+// The resulting guest stderr is returned through the existing output field.
 func GuestExec(virConn cli.Connection, domName string, command string, args []string, timeoutSeconds int32) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
@@ -133,7 +133,7 @@ func GuestExecWithCommand(ctx context.Context, command string, args []string, ti
 			exitCode = *execStatusRes.Return.ExitCode
 			exited = true
 			log.Log.V(4).Infof("Guest command %q, PID %d exited with code %d", command, execRes.Return.Pid, exitCode)
-			log.Log.V(5).Infof("Guest command %q, PID %d stdout: %q", command, execRes.Return.Pid, stdOut)
+			log.Log.V(5).Infof("Guest command %q, PID %d stderr: %q", command, execRes.Return.Pid, stdOut)
 			break
 		}
 

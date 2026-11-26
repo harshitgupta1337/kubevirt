@@ -89,7 +89,7 @@ var _ = Describe("AccessCredentials", func() {
 		return &domain.Spec
 	}
 
-	It("should handle qemu agent exec", func() {
+	It("should return guest stderr instead of stdout from qemu agent exec", func() {
 		const domName = "some-domain"
 		const command = "some-command"
 		args := []string{"arg1", "arg2"}
@@ -98,7 +98,7 @@ var _ = Describe("AccessCredentials", func() {
 		const expectedStatusCmd = `{"execute": "guest-exec-status", "arguments": { "pid": 789 } }`
 
 		mockLibvirt.ConnectionEXPECT().QemuAgentCommand(expectedCmd, domName).Return(`{"return":{"pid":789}}`, nil)
-		mockLibvirt.ConnectionEXPECT().QemuAgentCommand(expectedStatusCmd, domName).Return(`{"return":{"exitcode":0,"out-data":"c3NoIHNvbWVrZXkxMjMgdGVzdC1rZXkK","exited":true}}`, nil)
+		mockLibvirt.ConnectionEXPECT().QemuAgentCommand(expectedStatusCmd, domName).Return(`{"return":{"exitcode":0,"out-data":"aWdub3JlZA==","err-data":"c3NoIHNvbWVrZXkxMjMgdGVzdC1rZXkK","exited":true}}`, nil)
 
 		Expect(manager.agentGuestExec(domName, command, args)).To(Equal("ssh somekey123 test-key\n"))
 	})

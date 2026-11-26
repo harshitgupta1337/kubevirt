@@ -772,7 +772,7 @@ var _ = Describe("OpenVMM manager", func() {
 			}()
 		}
 
-		It("sends guest-exec without a handshake, waits for replies, polls the returned PID, and decodes stdout", func() {
+		It("sends guest-exec without a handshake, waits for replies, polls the returned PID, and decodes stderr instead of stdout", func() {
 			manager := newRunningManager()
 			command := `C:\Windows\System32\cmd.exe`
 			args := []string{"/c", "echo \"hello\"\nnext", `C:\Program Files\app`}
@@ -808,7 +808,7 @@ var _ = Describe("OpenVMM manager", func() {
 					if i == 0 {
 						_, err = io.WriteString(conn, "{\"return\":{\"exited\":false}}\n")
 					} else {
-						_, err = fmt.Fprintf(conn, "{\"return\":{\"exited\":true,\"exitcode\":0,\"out-data\":%q}}\n", base64.StdEncoding.EncodeToString([]byte("guest output\r\n")))
+						_, err = fmt.Fprintf(conn, "{\"return\":{\"exited\":true,\"exitcode\":0,\"out-data\":\"aWdub3JlZA==\",\"err-data\":%q}}\n", base64.StdEncoding.EncodeToString([]byte("guest output\r\n")))
 					}
 					Expect(err).ToNot(HaveOccurred())
 				}
@@ -844,7 +844,7 @@ var _ = Describe("OpenVMM manager", func() {
 					Expect(err).To(MatchError(ContainSubstring(expectedError)))
 				}
 			},
-			Entry("nonzero exit code retains stdout", `{"return":{"pid":42}}`, `{"return":{"exited":true,"exitcode":7,"out-data":"b3V0cHV0"}}`, "output", "", 7),
+			Entry("nonzero exit code retains stderr", `{"return":{"pid":42}}`, `{"return":{"exited":true,"exitcode":7,"out-data":"aWdub3JlZA==","err-data":"b3V0cHV0"}}`, "output", "", 7),
 			Entry("invalid PID", `{"return":{"pid":0}}`, "", "", "expected a positive PID", 0),
 			Entry("missing PID", `{"return":{}}`, "", "", "expected a positive PID", 0),
 			Entry("null PID", `{"return":{"pid":null}}`, "", "", "expected a positive PID", 0),
@@ -857,7 +857,7 @@ var _ = Describe("OpenVMM manager", func() {
 			Entry("guest-exec-status error", `{"return":{"pid":42}}`, `{"error":{"class":"GenericError","desc":"PID not found"}}`, "", "PID not found", 0),
 			Entry("missing return value", `{}`, "", "", "no return value", 0),
 			Entry("malformed JSON", `not-json`, "", "", "reading OpenVMM guest agent response", 0),
-			Entry("invalid base64", `{"return":{"pid":42}}`, `{"return":{"exited":true,"exitcode":0,"out-data":"!!!"}}`, "", "illegal base64", 0),
+			Entry("invalid stderr base64", `{"return":{"pid":42}}`, `{"return":{"exited":true,"exitcode":0,"err-data":"!!!"}}`, "", "illegal base64", 0),
 		)
 
 		It("times out when the guest agent does not respond", func() {
