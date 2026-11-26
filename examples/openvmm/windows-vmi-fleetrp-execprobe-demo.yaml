@@ -4,6 +4,11 @@ metadata:
   name: cloudbuild-unattend-datavolume-sysprep
 type: Opaque
 stringData:
+  Install-Probe.ps1: |-
+    $ErrorActionPreference = 'Stop'
+    New-Item -ItemType Directory -Path 'C:\ProbeTest' -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Read-Status.ps1') -Destination 'C:\ProbeTest\Read-Status.ps1' -Force
+
   # Included on the sysprep ISO and copied to the OS disk during specialize.
   Read-Status.ps1: |-
     param(
@@ -85,8 +90,8 @@ stringData:
             <RunSynchronousCommand wcm:action="add">
               <Order>3</Order>
               <Description>Install Read-Status probe script</Description>
-              <!-- Discover the media drive letter rather than assuming D:. -->
-              <Path>powershell.exe -ExecutionPolicy Bypass -NoProfile -NonInteractive -Command "$ErrorActionPreference = 'Stop'; $sources = @(Get-PSDrive -PSProvider FileSystem | ForEach-Object { Join-Path $_.Root 'Read-Status.ps1' } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }); if ($sources.Count -ne 1) { throw 'Expected exactly one sysprep drive with Read-Status.ps1' }; New-Item -ItemType Directory -Path 'C:\ProbeTest' -Force | Out-Null; Copy-Item -LiteralPath $sources[0] -Destination 'C:\ProbeTest\Read-Status.ps1' -Force"</Path>
+              <!-- Path is limited to 259 characters; keep copy logic on the media. -->
+              <Path>powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $p=@(Get-PSDrive -PSProvider FileSystem|%{$_.Root+'Install-Probe.ps1'}|?{Test-Path $_}); if($p.Count -ne 1){throw 'Sysprep media'}; &amp; $p[0]"</Path>
             </RunSynchronousCommand>
           </RunSynchronous>
         </component>
