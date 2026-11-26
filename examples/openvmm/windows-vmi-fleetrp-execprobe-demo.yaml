@@ -122,7 +122,7 @@ stringData:
           </OOBE>
           <UserAccounts>
             <AdministratorPassword>
-              <Value>P@ssw0rd!!</Value>
+              <Value>GPBurdell123</Value>
                 <PlainText>true</PlainText>
             </AdministratorPassword>
           </UserAccounts>
@@ -139,6 +139,17 @@ spec:
   runStrategy: Always
   template:
     spec:
+      readinessProbe:
+        timeoutSeconds: 5
+        exec:
+          command:
+          - powershell.exe
+          - -NoProfile
+          - -NonInteractive
+          - -ExecutionPolicy
+          - Bypass
+          - -File
+          - C:\ProbeTest\Read-Status.ps1
       architecture: amd64
       domain:
         cpu:
