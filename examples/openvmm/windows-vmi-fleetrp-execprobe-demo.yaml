@@ -4,6 +4,57 @@ metadata:
   name: cloudbuild-unattend-datavolume-sysprep
 type: Opaque
 stringData:
+  # Requires outbound HTTPS during specialize. MSI diagnostics stay on the OS disk.
+  Install-QemuGA.ps1: |-
+    $ErrorActionPreference = 'Stop'
+    $setupDir = 'C:\ProbeTest'
+    New-Item -ItemType Directory -Path $setupDir -Force | Out-Null
+    $msiPath = Join-Path $setupDir 'qemu-ga-x86_64.msi'
+    $logPath = Join-Path $setupDir 'qemu-ga-install.log'
+
+    Write-Output 'Downloading QEMU guest agent'
+    Invoke-WebRequest -Uri 'https://salt-fileserver.servercontrol.com.au/files/virtio/qemu-ga-x86_64.msi' -OutFile $msiPath -UseBasicParsing -TimeoutSec 180
+    $arguments = '/i "{0}" /qn /norestart /l*v "{1}"' -f $msiPath, $logPath
+    $installer = Start-Process -FilePath 'msiexec.exe' -ArgumentList $arguments -Wait -PassThru
+    if ($installer.ExitCode -notin @(0, 3010)) {
+        throw "QEMU guest agent installation failed with exit code $($installer.ExitCode); see $logPath"
+    }
+    if ($installer.ExitCode -eq 3010) {
+        Write-Warning 'QEMU guest agent installation requires a reboot after Windows setup completes'
+    }
+
+    $service = Get-CimInstance -ClassName Win32_Service -Filter "Name = 'QEMU-GA'"
+    if ($null -eq $service) {
+        throw 'The MSI did not register the QEMU-GA service'
+    }
+    $match = [regex]::Match($service.PathName, '^\s*(?:"(?<exe>[^"]+)"|(?<exe>\S+))')
+    $exePath = $match.Groups['exe'].Value
+    if (-not $match.Success -or -not (Test-Path -LiteralPath $exePath -PathType Leaf)) {
+        throw "Cannot locate the QEMU-GA executable from service path: $($service.PathName)"
+    }
+
+    $controller = Get-Service -Name 'QEMU-GA'
+    if ($controller.Status -ne 'Stopped') {
+        Stop-Service -Name 'QEMU-GA'
+        $controller.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+    }
+    # -d is required for Windows service mode; COM2 carries the agent protocol.
+    $binaryPath = '"{0}" -d --method isa-serial --path COM2' -f $exePath
+    $change = Invoke-CimMethod -InputObject $service -MethodName Change -Arguments @{
+        PathName = $binaryPath
+        StartMode = 'Automatic'
+    }
+    if ($change.ReturnValue -ne 0) {
+        throw "Configuring QEMU-GA failed with Win32_Service.Change code $($change.ReturnValue)"
+    }
+    $configured = Get-CimInstance -ClassName Win32_Service -Filter "Name = 'QEMU-GA'"
+    if ($configured.PathName -ne $binaryPath -or $configured.StartMode -ne 'Auto') {
+        throw 'QEMU-GA service configuration did not persist'
+    }
+    Start-Service -Name 'QEMU-GA'
+    $controller.WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+    Write-Output "QEMU-GA is running: $binaryPath"
+
   Install-Probe.ps1: |-
     $ErrorActionPreference = 'Stop'
     New-Item -ItemType Directory -Path 'C:\ProbeTest' -Force | Out-Null
@@ -92,6 +143,11 @@ stringData:
               <Description>Install Read-Status probe script</Description>
               <!-- Path is limited to 259 characters; keep copy logic on the media. -->
               <Path>powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $p=@(Get-PSDrive -PSProvider FileSystem|%{$_.Root+'Install-Probe.ps1'}|?{Test-Path $_}); if($p.Count -ne 1){throw 'Sysprep media'}; &amp; $p[0]"</Path>
+            </RunSynchronousCommand>
+            <RunSynchronousCommand wcm:action="add">
+              <Order>4</Order>
+              <Description>Install and configure QEMU guest agent on COM2</Description>
+              <Path>powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $p=@(Get-PSDrive -PSProvider FileSystem|%{$_.Root+'Install-QemuGA.ps1'}|?{Test-Path $_}); if($p.Count -ne 1){throw 'Sysprep media'}; &amp; $p[0]"</Path>
             </RunSynchronousCommand>
           </RunSynchronous>
         </component>
