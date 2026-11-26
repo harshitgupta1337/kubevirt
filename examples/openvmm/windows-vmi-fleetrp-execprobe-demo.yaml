@@ -1,0 +1,195 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudbuild-unattend-datavolume-sysprep
+type: Opaque
+stringData:
+  # Included on the sysprep ISO and copied to the OS disk during specialize.
+  Read-Status.ps1: |-
+    param(
+        [string]$Path = 'C:\ProbeTest\status.json',
+        [switch]$UseStderr
+    )
+
+    $ErrorActionPreference = 'Stop'
+    $exitCode = 30
+
+    try {
+        $text = [IO.File]::ReadAllText($Path)
+        $status = $text | ConvertFrom-Json
+
+        switch -CaseSensitive ($status.status) {
+            'Pending'   { $exitCode = 10 }
+            'Succeeded' { $exitCode = 0 }
+            'Failed'    {
+                if ([string]::IsNullOrWhiteSpace($status.errorCode)) {
+                    throw 'Failure requires an error code'
+                }
+                $exitCode = 20
+            }
+            default { throw 'Invalid status' }
+        }
+
+        $result = $status |
+            Select-Object status, errorCode, commandExitCode
+    }
+    catch [IO.FileNotFoundException] {
+        $result = @{ status = 'Pending'; errorCode = 'FileMissing' }
+        $exitCode = 10
+    }
+    catch {
+        $result = @{
+            status = 'ReportingError'
+            errorCode = 'StatusReadOrParseFailed'
+        }
+    }
+
+    $line = 'FLEET_PROBE_TEST ' + ($result | ConvertTo-Json -Compress)
+    if ($UseStderr) {
+        [Console]::Error.WriteLine($line)
+    } else {
+        [Console]::Out.WriteLine($line)
+    }
+    exit $exitCode
+
+  # KubeVirt requires this exact lowercase filename on sysprep media. This
+  # install-time answer file is intentionally empty for a generalized image.
+  autounattend.xml: |-
+    <?xml version="1.0" encoding="utf-8"?>
+    <unattend xmlns="urn:schemas-microsoft-com:unattend" />
+
+  # Windows uses unattend.xml while completing OOBE on a generalized image.
+  # Keep both password values identical after replacing the example value.
+  unattend.xml: |-
+    <?xml version="1.0" encoding="utf-8"?>
+    <unattend xmlns="urn:schemas-microsoft-com:unattend">
+      <settings pass="specialize">
+        <component name="Microsoft-Windows-Deployment"
+                   processorArchitecture="amd64"
+                   publicKeyToken="31bf3856ad364e35"
+                   language="neutral"
+                   versionScope="nonSxS"
+                   xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <RunSynchronous>
+            <RunSynchronousCommand wcm:action="add">
+              <Order>1</Order>
+              <Description>Enable EMS in BCD</Description>
+              <Path>powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "bcdedit /ems on"</Path>
+            </RunSynchronousCommand>
+            <RunSynchronousCommand wcm:action="add">
+              <Order>2</Order>
+              <Description>Set EMS Port to 1</Description>
+              <Path>powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "bcdedit /emssettings EMSPORT:1"</Path>
+            </RunSynchronousCommand>
+            <RunSynchronousCommand wcm:action="add">
+              <Order>3</Order>
+              <Description>Install Read-Status probe script</Description>
+              <!-- Discover the media drive letter rather than assuming D:. -->
+              <Path>powershell.exe -ExecutionPolicy Bypass -NoProfile -NonInteractive -Command "$ErrorActionPreference = 'Stop'; $sources = @(Get-PSDrive -PSProvider FileSystem | ForEach-Object { Join-Path $_.Root 'Read-Status.ps1' } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }); if ($sources.Count -ne 1) { throw 'Expected exactly one sysprep drive with Read-Status.ps1' }; New-Item -ItemType Directory -Path 'C:\ProbeTest' -Force | Out-Null; Copy-Item -LiteralPath $sources[0] -Destination 'C:\ProbeTest\Read-Status.ps1' -Force"</Path>
+            </RunSynchronousCommand>
+          </RunSynchronous>
+        </component>
+      </settings>
+
+      <settings pass="oobeSystem">
+        <component name="Microsoft-Windows-International-Core"
+                   processorArchitecture="amd64"
+                   publicKeyToken="31bf3856ad364e35"
+                   language="neutral"
+                   versionScope="nonSxS"
+                   xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <InputLocale>en-US</InputLocale>
+          <SystemLocale>en-US</SystemLocale>
+          <UILanguage>en-US</UILanguage>
+          <UserLocale>en-US</UserLocale>
+        </component>
+        <component name="Microsoft-Windows-Shell-Setup"
+                   processorArchitecture="amd64"
+                   publicKeyToken="31bf3856ad364e35"
+                   language="neutral"
+                   versionScope="nonSxS"
+                   xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <OOBE>
+            <HideEULAPage>true</HideEULAPage>
+            <HideLocalAccountScreen>true</HideLocalAccountScreen>
+            <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+            <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+            <NetworkLocation>Work</NetworkLocation>
+            <ProtectYourPC>3</ProtectYourPC>
+          </OOBE>
+          <UserAccounts>
+            <AdministratorPassword>
+              <Value>P@ssw0rd!!</Value>
+                <PlainText>true</PlainText>
+            </AdministratorPassword>
+          </UserAccounts>
+        </component>
+      </settings>
+    </unattend>
+
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: cloudbuild00
+spec:
+  runStrategy: Always
+  template:
+    spec:
+      architecture: amd64
+      domain:
+        cpu:
+          cores: 4
+          model: host-model
+        devices:
+          disks:
+          - name: sysprep
+            cdrom:
+              bus: vmbus
+              readonly: true
+          - disk:
+              bus: vmbus
+            name: rootdisk
+          interfaces:
+          - bridge: {}
+            model: vmbus
+            name: default
+        features:
+          acpi:
+            enabled: true
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: false
+        memory:
+          guest: 4Gi
+      evictionStrategy: None
+      networks:
+      - name: default
+        pod: {}
+      volumes:
+      - name: sysprep
+        sysprep:
+          secret:
+            name: cloudbuild-unattend-datavolume-sysprep
+      - name: rootdisk
+        dataVolume:
+          name: 1es-windows-vhd
+
+  dataVolumeTemplates:
+  - metadata:
+      name: 1es-windows-vhd
+    spec:
+      pvc:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 180Gi
+        storageClassName: local
+      source:
+        registry:
+          url: docker://acrafoimages.azurecr.io/kubevirt-openvmm/windows-1es-image:vhd-11-18-2026
