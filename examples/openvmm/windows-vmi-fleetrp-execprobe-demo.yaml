@@ -155,6 +155,7 @@ spec:
           - Bypass
           - -File
           - C:\ProbeTest\Read-Status.ps1
+          - -UseStderr
       architecture: amd64
       domain:
         cpu:
