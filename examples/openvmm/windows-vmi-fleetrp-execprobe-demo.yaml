@@ -59,6 +59,20 @@ stringData:
     $ErrorActionPreference = 'Stop'
     New-Item -ItemType Directory -Path 'C:\ProbeTest' -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Read-Status.ps1') -Destination 'C:\ProbeTest\Read-Status.ps1' -Force
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Bootstrap-Script.ps1') -Destination 'C:\ProbeTest\Bootstrap-Script.ps1' -Force
+
+    # Run on the next boot, not during specialize, and remove the task after success.
+    $taskCommand = '$ErrorActionPreference = ''Stop''; & ''C:\ProbeTest\Bootstrap-Script.ps1''; Unregister-ScheduledTask -TaskName ''FleetProbeTestWriteStatus'' -Confirm:$false'
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "{0}"' -f $taskCommand)
+    $trigger = New-ScheduledTaskTrigger -AtStartup
+    Register-ScheduledTask -TaskName 'FleetProbeTestWriteStatus' -Action $action -Trigger $trigger -User 'SYSTEM' -RunLevel Highest -Force | Out-Null
+
+  Bootstrap-Script.ps1: |-
+    $ErrorActionPreference = 'Stop'
+    Start-Sleep -Seconds 20
+    '{"status":"Pending"}' | Set-Content C:\ProbeTest\status.json
+    Start-Sleep -Seconds 20
+    '{"status":"Succeeded"}' | Set-Content C:\ProbeTest\status.json
 
   # Included on the sysprep ISO and copied to the OS disk during specialize.
   Read-Status.ps1: |-
